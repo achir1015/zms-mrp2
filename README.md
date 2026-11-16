@@ -7,7 +7,7 @@
 
 - 介面用 Python＋Flet，資料庫用 MariaDB（95 張表，每個欄位都有繁中備註）。
 - Windows 版內建資料庫（埠 3398），打開程式自動啟動，關閉程式自動停止。
-- 平台：Windows 11 已完成；macOS、iPad、Android、iPhone 規劃中。
+- 平台：Windows 11、macOS（公證）、Android、iPhone、iPad。手機與平板透過電腦的「手機連線」服務使用，不直接連資料庫。
 - 開發者：吳玉柱 先生 與 Claude AI Opus 5.5
 
 ## 功能
@@ -30,6 +30,18 @@
 執行 `ZMSMRP2-Setup-<版本>.exe`，安裝後桌面會出現「資料助秘之物料需求II生產製造系統」捷徑。第一次開啟時建立系統管理員帳號；想先試用可到「系統管理 → 範例資料」載入電子業範例（主機板、電源供應器、USB 集線器）。
 
 - 程式：`%LOCALAPPDATA%\Programs\ZMSMRP2`；資料：`%LOCALAPPDATA%\ZMSMRP2`（更新或解除安裝都不會刪除）。
+
+## 安裝（macOS）
+
+下載 `ZMSMRP2-<版本>-mac.dmg`，把 App 拖到「應用程式」。已通過 Apple 公證；內附 MariaDB 10.11.18，結束 App（含 ⌘Q）自動停止。
+
+## 手機版（Android／iPhone／iPad）
+
+1. 電腦版開啟「系統管理 → 手機連線」，畫面會出現 QR Code。
+2. Android 安裝 `ZMSMRP2-<版本>-android.apk`；iPhone／iPad 用 Safari 開 https://achir1015.github.io/zms-mrp2/ios/ 按「安裝」（Ad Hoc，已登記的裝置）。
+3. 用手機相機掃 QR Code，App 自動開啟並連線，再用自己的帳號登入；權限與電腦版相同。
+
+- 外出時可開「外出連線」（Cloudflare 加密通道）；也可以用 `ZMSMRP2.exe --server` 不開視窗只提供服務。
 
 ## 開發
 
