@@ -126,11 +126,7 @@ class DocScreen(ft.Row):
 
     def extra_info(self, h):
         if self.kind == "PO" and self.doc_id:
-            rows = self.b.db.rows("SELECT h.rcv_no, h.rcv_date, i.item_code, d.accept_qty, d.reject_qty, d.lot_no, c.origin_label, "
-                                  "d.date_code, d.base_amount FROM pur_receipt_d d JOIN pur_receipt_h h ON h.id=d.rcv_id "
-                                  "JOIN itm_item i ON i.id=d.item_id JOIN pur_order_d p ON p.id=d.po_line_id LEFT JOIN "
-                                  "bas_country c ON c.country_code=d.origin_country WHERE p.po_id=%s ORDER BY h.id",
-                                  (self.doc_id,))
+            rows = self.b.v("po_receipts", self.doc_id)
             if rows:
                 g = T.Grid([("rcv_no", "進貨單", "s", 110), ("rcv_date", "日期", "d", 80), ("item_code", "料件", "s", 100),
                             ("accept_qty", "合格", "q", 60), ("reject_qty", "驗退", "qz", 50), ("lot_no", "批號", "s", 100),
@@ -139,9 +135,7 @@ class DocScreen(ft.Row):
                 g.set_rows(rows)
                 return ft.Column([ft.Text("進貨紀錄", size=14, weight=ft.FontWeight.W_700), g], spacing=6)
         if self.kind == "SO" and self.doc_id:
-            rows = self.b.db.rows("SELECT h.ship_no, h.ship_date, i.item_code, d.qty, d.lot_no, d.base_amount FROM sal_ship_d d "
-                                  "JOIN sal_ship_h h ON h.id=d.ship_id JOIN itm_item i ON i.id=d.item_id JOIN sal_order_d s "
-                                  "ON s.id=d.so_line_id WHERE s.so_id=%s ORDER BY h.id", (self.doc_id,))
+            rows = self.b.v("so_ships", self.doc_id)
             if rows:
                 g = T.Grid([("ship_no", "出貨單", "s", 110), ("ship_date", "日期", "d", 80), ("item_code", "料件", "s", 110),
                             ("qty", "數量", "q", 60), ("lot_no", "批號", "s", 140), ("base_amount", "NT$", "n", 90)], height=150)
@@ -154,15 +148,14 @@ class DocScreen(ft.Row):
         if key == "supplier_id" and self.kind == "PO":
             sid = self.head.inputs["supplier_id"].value
             if sid:
-                cur = self.b.db.value("SELECT currency_code FROM pur_supplier WHERE id=%s", (sid,))
+                cur = self.b.v("supplier_currency", sid)
                 self.head.inputs["currency_code"].value = cur
                 self.head.inputs["exchange_rate"].value = ""
                 self.head.update()
         if key == "customer_id" and self.kind == "SO":
             cid = self.head.inputs["customer_id"].value
             if cid:
-                self.head.inputs["currency_code"].value = self.b.db.value(
-                    "SELECT currency_code FROM sal_customer WHERE id=%s", (cid,))
+                self.head.inputs["currency_code"].value = self.b.v("customer_currency", cid)
                 self.head.update()
         self.calc(refresh=True)
 
@@ -170,7 +163,7 @@ class DocScreen(ft.Row):
         if key == "item_id" and cs["item_id"].value:
             item = int(cs["item_id"].value)
             if "rev_id" in cs and not cs["rev_id"].value:
-                cs["rev_id"].value = str(self.b.db.value("SELECT current_rev_id FROM itm_item WHERE id=%s", (item,)) or "") or None
+                cs["rev_id"].value = str(self.b.v("item_current_rev", item) or "") or None
             if self.kind == "PO":
                 sup = self.head.inputs["supplier_id"].value
                 src = self.b.source_for(item, int(sup)) if sup else None
@@ -243,62 +236,27 @@ class DocScreen(ft.Row):
         self.open(self.doc_id)
 
     def pr_to_po(self):
-        h, lines = self.b.doc("PR", self.doc_id)
-        by = {}
-        for l in lines:
-            if not l["suggest_supplier_id"]:
-                self.ctx.toast("每一項都要有建議供應商才能轉採購單", True)
-                return
-            by.setdefault(l["suggest_supplier_id"], []).append(dict(item_id=l["item_id"], rev_id=l["rev_id"], qty=l["qty"],
-                                                                     due_date=l["need_date"], id=l["id"]))
-
-        def go():
-            out = []
-            with self.b.db.transaction():
-                for sup, ls in by.items():
-                    out.append(self.b.create_po_from_planned(sup, ls))
-                    for l in ls:
-                        self.b.db.exec("UPDATE pur_req_d SET ordered_qty=qty WHERE id=%s", (l["id"],))
-                self.b.db.exec("UPDATE pur_req_h SET status='C' WHERE id=%s", (self.doc_id,))
-            return out
-        r = self.ctx.guard(go)
+        r = self.ctx.guard(self.b.pr_to_po, self.doc_id)
         if r:
             self.ctx.toast("已產生採購單草稿：%s" % "、".join(r))
             self.reload(refresh=False)
             self.open(self.doc_id)
 
     def so_to_wo(self):
-        h, lines = self.b.doc("SO", self.doc_id)
-        mfg = [l for l in lines if self.b.db.value("SELECT source_type FROM itm_item WHERE id=%s", (l["item_id"],)) != "P"
-               and l["qty"] > l["shipped_qty"]]
-        if not mfg:
-            self.ctx.toast("此訂單沒有需要生產的自製料件", True)
-            return
-
-        def go():
-            out = []
-            for l in mfg:
-                lt = self.b.db.value("SELECT lead_time_days FROM itm_plan WHERE item_id=%s", (l["item_id"],)) or 0
-                self.b._calendar()
-                start = self.b.workday_back(l["due_date"], lt)
-                out.append(self.b.create_work_order(l["item_id"], l["qty"] - l["shipped_qty"], start, l["due_date"],
-                                                    so_line_id=l["id"], rev_id=l["rev_id"]))
-            return out
-        r = self.ctx.guard(go)
+        r = self.ctx.guard(self.b.so_to_wo, self.doc_id)
         if r:
             self.ctx.toast("已開立工單（計畫狀態）：%s" % "、".join(r))
 
 
 def receive_dialog(ctx, po_id, done):
     b = ctx.books
-    po = b.db.row("SELECT h.*, s.sup_name FROM pur_order_h h JOIN pur_supplier s ON s.id=h.supplier_id WHERE h.id=%s", (po_id,))
-    lines = b.db.rows("SELECT d.*, i.item_code, i.item_name FROM pur_order_d d JOIN itm_item i ON i.id=d.item_id WHERE "
-                      "d.po_id=%s AND d.status='O' ORDER BY d.line_no", (po_id,))
+    po = b.v("po_for_receive", po_id)
+    lines = b.v("po_open_lines", po_id)
     if not lines:
         ctx.toast("此採購單已全部進貨", True)
         return
     dt_ = T.date_field("進貨日期", width=160)
-    wh = T.dropdown("入庫倉", ctx.look("warehouses"), b.db.value("SELECT id FROM bas_warehouse WHERE wh_code='RM'"), width=200)
+    wh = T.dropdown("入庫倉", ctx.look("warehouses"), b.v("wh_by_code", "RM"), width=200)
     inv = T.field("發票號碼", "", width=150)
     rows = []
     ui = [ft.Row([ft.Text(t, width=w, size=12, weight=ft.FontWeight.W_700) for t, w in
@@ -331,15 +289,12 @@ def receive_dialog(ctx, po_id, done):
 
 def ship_dialog(ctx, so_id, done):
     b = ctx.books
-    lines = b.db.rows("SELECT d.*, i.item_code, i.item_name, (SELECT COALESCE(SUM(x.on_hand_qty-x.allocated_qty),0) FROM "
-                      "inv_balance x JOIN bas_warehouse w ON w.id=x.warehouse_id WHERE x.item_id=d.item_id AND w.wh_code='FG') "
-                      "fg FROM sal_order_d d JOIN itm_item i ON i.id=d.item_id WHERE d.so_id=%s AND d.status='O' "
-                      "ORDER BY d.line_no", (so_id,))
+    lines = b.v("so_open_lines", so_id)
     if not lines:
         ctx.toast("此訂單已全部出貨", True)
         return
     dt_ = T.date_field("出貨日期", width=160)
-    wh = T.dropdown("出貨倉", ctx.look("warehouses"), b.db.value("SELECT id FROM bas_warehouse WHERE wh_code='FG'"), width=200)
+    wh = T.dropdown("出貨倉", ctx.look("warehouses"), b.v("wh_by_code", "FG"), width=200)
     inv = T.field("發票號碼", "", width=150)
     rows, ui = [], []
     for l in lines:

@@ -57,9 +57,7 @@ class BomScreen(_Editor):
         return "物料清單 BOM", "產品結構：元件、用量、損耗、指定版本與產地", I.ACCOUNT_TREE, "violet"
 
     def reload(self):
-        self.rows = self.b.db.rows(
-            "SELECT i.id, i.item_code, i.item_name, h.bom_ver ver, h.status st FROM itm_item i LEFT JOIN bom_header h ON "
-            "h.parent_item_id=i.id AND h.is_default=1 WHERE i.source_type<>'P' AND i.is_active=1 ORDER BY i.item_code")
+        self.rows = self.b.v("bom_parents")
         self.filter(refresh=False)
 
     def render(self, refresh=True):
@@ -68,11 +66,10 @@ class BomScreen(_Editor):
             if refresh:
                 self.update()
             return
-        it = self.b.db.row("SELECT * FROM itm_item WHERE id=%s", (self.item_id,))
-        self.h = self.b.db.row("SELECT * FROM bom_header WHERE parent_item_id=%s ORDER BY is_default DESC, id DESC LIMIT 1",
-                               (self.item_id,))
+        it = self.b.v("item", self.item_id)
+        self.h = self.b.v("bom_head_of", self.item_id)
         h = self.h or {"bom_ver": "01", "base_qty": 1, "is_default": True, "parent_rev_id": it["current_rev_id"]}
-        lines = self.b.db.rows("SELECT * FROM bom_detail WHERE bom_id=%s ORDER BY line_no", (h["id"],)) if self.h else []
+        lines = self.b.v("bom_lines", h["id"]) if self.h else []
         locked = bool(self.h and self.h["status"] != "D") or not self.editable
         self.head = Form(self.ctx.look, BOM_HEAD, h, disabled=locked, per_row=3)
         self.lines = LinesEditor(self.ctx.look, BOM_LINES, lines, disabled=locked, height=330)
@@ -115,9 +112,7 @@ class BomScreen(_Editor):
                         ("source", "來源", "s", 50)], height=320)
             g.set_rows(rows)
         else:
-            rows = self.b.db.rows("SELECT i.item_code, i.item_name, h.bom_ver, d.qty_per, h.status FROM bom_detail d JOIN "
-                                  "bom_header h ON h.id=d.bom_id JOIN itm_item i ON i.id=h.parent_item_id WHERE "
-                                  "d.child_item_id=%s ORDER BY i.item_code", (self.item_id,))
+            rows = self.b.v("bom_where_used", self.item_id)
             g = T.Grid([("item_code", "母件", "s", 120), ("item_name", "品名", "s", 200), ("bom_ver", "版本", "s", 50),
                         ("qty_per", "用量", "q", 70), ("status", "狀態", "st:doc", 70)], height=240,
                        empty="此料件沒有被其他 BOM 使用")
@@ -129,10 +124,7 @@ class BomScreen(_Editor):
     def _tree(self, item_id, q, lvl, out, path):
         if item_id in path or lvl > 20:
             return
-        for d in self.b.db.rows(
-                "SELECT d.*, h.base_qty, i.item_code, i.item_name, i.source_type FROM bom_header h JOIN bom_detail d ON "
-                "d.bom_id=h.id JOIN itm_item i ON i.id=d.child_item_id WHERE h.parent_item_id=%s AND h.is_default=1 "
-                "ORDER BY d.line_no", (item_id,)):
+        for d in self.b.v("bom_children", item_id):
             tot = q / Decimal(d["base_qty"] or 1) * Decimal(d["qty_per"]) / (1 - Decimal(d["scrap_rate"] or 0))
             out.append(dict(lvl="．" * (lvl - 1) + str(lvl), item_code=d["item_code"], item_name=d["item_name"],
                             qty_per=d["qty_per"], total=tot.quantize(Decimal("0.0001")), origin=d["required_country"] or "",
@@ -144,70 +136,23 @@ class BomScreen(_Editor):
         c = self.ctx
         try:
             h = self.head.values()
-            lines = [l for l in self.lines.values() if l.get("child_item_id")]
+            lines = self.lines.values()
         except Exception as e:
             c.toast(str(e), True)
             return
-        if not lines:
-            c.toast("請至少輸入一個元件", True)
-            return
-        for l in lines:
-            if int(l["child_item_id"]) == self.item_id:
-                c.toast("元件不能是母件自己", True)
-                return
-            if not l.get("qty_per") or l["qty_per"] <= 0:
-                c.toast("用量要大於 0", True)
-                return
-
-        def go():
-            db = self.b.db
-            with db.transaction():
-                hv = dict(h, parent_item_id=self.item_id, base_qty=h.get("base_qty") or 1, bom_ver=h.get("bom_ver") or "01")
-                bid = self.b.save_row("bom_header", hv, self.h and self.h["id"], "BOM")
-                if hv.get("is_default"):
-                    db.exec("UPDATE bom_header SET is_default=0 WHERE parent_item_id=%s AND id<>%s", (self.item_id, bid))
-                db.exec("DELETE FROM bom_detail WHERE bom_id=%s", (bid,))
-                for i, l in enumerate(lines, 1):
-                    l = {k: v for k, v in l.items() if k in [x[0] for x in BOM_LINES]}
-                    l.update(bom_id=bid, line_no=i, scrap_rate=l.get("scrap_rate") or 0,
-                             effective_date=l.get("effective_date") or "2000-01-01", issue_type=l.get("issue_type") or "P",
-                             is_phantom=int(bool(l.get("is_phantom"))))
-                    db.exec("INSERT INTO bom_detail (%s) VALUES (%s)" % (", ".join(l), ", ".join(["%s"] * len(l))),
-                            list(l.values()))
-                self.b.compute_low_level_codes()
-        if c.guard(go, ok="BOM 已儲存（草稿）；確認無誤請按「核准」"):
+        if c.guard(self.b.save_bom, self.item_id, self.h and self.h["id"], h, lines,
+                   ok="BOM 已儲存（草稿）；確認無誤請按「核准」"):
             c.look.clear()
             self.reload()
             self.render()
 
     def set_status(self, st):
-        def go():
-            if st == "A":
-                self.b.compute_low_level_codes()       # 檢查循環
-            self.b.db.exec("UPDATE bom_header SET status=%s, approved_by=%s, approved_at=IF(%s='A',NOW(),NULL) WHERE id=%s",
-                           (st, self.b.user_id if st == "A" else None, st, self.h["id"]))
-            self.b.log("STATUS", "bom_header", self.h["id"], st, "BOM")
-        if self.ctx.guard(go, ok="已核准" if st == "A" else "已取消核准，可以修改"):
+        if self.ctx.guard(self.b.set_bom_status, self.h["id"], st, ok="已核准" if st == "A" else "已取消核准，可以修改"):
             self.reload()
             self.render()
 
     def copy_version(self):
-        def go():
-            db = self.b.db
-            vers = [r["bom_ver"] for r in db.rows("SELECT bom_ver FROM bom_header WHERE parent_item_id=%s", (self.item_id,))]
-            n = 1
-            while "%02d" % n in vers:
-                n += 1
-            with db.transaction():
-                nid = db.exec("INSERT INTO bom_header (parent_item_id, parent_rev_id, bom_ver, base_qty, is_default, status, "
-                              "note, created_by) SELECT parent_item_id, parent_rev_id, %s, base_qty, 0, 'D', note, %s FROM "
-                              "bom_header WHERE id=%s", ("%02d" % n, self.b.user_id, self.h["id"]))
-                db.exec("INSERT INTO bom_detail (bom_id, line_no, child_item_id, child_rev_id, required_country, qty_per, "
-                        "scrap_rate, op_seq, issue_type, is_phantom, effective_date, obsolete_date, note) SELECT %s, line_no, "
-                        "child_item_id, child_rev_id, required_country, qty_per, scrap_rate, op_seq, issue_type, is_phantom, "
-                        "effective_date, obsolete_date, note FROM bom_detail WHERE bom_id=%s", (nid, self.h["id"]))
-            return "%02d" % n
-        v = self.ctx.guard(go)
+        v = self.ctx.guard(self.b.copy_bom_version, self.h["id"])
         if v:
             self.ctx.toast("已複製成版本 %s（草稿，非預設）；可建立工程變更單記錄改版" % v)
 
@@ -219,9 +164,7 @@ class RoutingScreen(_Editor):
         return "途程", "工序、工作中心、整備與加工工時（產能計算與工單工序的依據）", I.ROUTE, "teal"
 
     def reload(self):
-        self.rows = self.b.db.rows(
-            "SELECT i.id, i.item_code, i.item_name, h.routing_ver ver, h.status st FROM itm_item i LEFT JOIN rou_routing_h h "
-            "ON h.item_id=i.id AND h.is_default=1 WHERE i.source_type<>'P' AND i.is_active=1 ORDER BY i.item_code")
+        self.rows = self.b.v("rou_parents")
         self.filter(refresh=False)
 
     def render(self, refresh=True):
@@ -230,11 +173,10 @@ class RoutingScreen(_Editor):
             if refresh:
                 self.update()
             return
-        it = self.b.db.row("SELECT * FROM itm_item WHERE id=%s", (self.item_id,))
-        self.h = self.b.db.row("SELECT * FROM rou_routing_h WHERE item_id=%s ORDER BY is_default DESC, id DESC LIMIT 1",
-                               (self.item_id,))
+        it = self.b.v("item", self.item_id)
+        self.h = self.b.v("rou_head_of", self.item_id)
         h = self.h or {"routing_ver": "01", "is_default": True}
-        lines = self.b.db.rows("SELECT * FROM rou_routing_d WHERE routing_id=%s ORDER BY op_seq", (h["id"],)) if self.h else []
+        lines = self.b.v("rou_lines", h["id"]) if self.h else []
         dis = not self.editable
         self.head = Form(self.ctx.look, ROU_HEAD, h, disabled=dis, per_row=2)
         self.lines = LinesEditor(self.ctx.look, ROU_LINES, lines, disabled=dis, height=360)
@@ -253,33 +195,10 @@ class RoutingScreen(_Editor):
         c = self.ctx
         try:
             h = self.head.values()
-            lines = [l for l in self.lines.values() if l.get("wc_id")]
+            lines = self.lines.values()
         except Exception as e:
             c.toast(str(e), True)
             return
-        if not lines:
-            c.toast("請至少輸入一道工序", True)
-            return
-        seqs = [l.get("op_seq") for l in lines]
-        if None in seqs or len(set(seqs)) != len(seqs):
-            c.toast("工序號碼不能空白或重複（建議 10、20、30…）", True)
-            return
-
-        def go():
-            db = self.b.db
-            with db.transaction():
-                hv = dict(h, item_id=self.item_id, routing_ver=h.get("routing_ver") or "01", status="A")
-                rid = self.b.save_row("rou_routing_h", hv, self.h and self.h["id"], "ROU")
-                if hv.get("is_default"):
-                    db.exec("UPDATE rou_routing_h SET is_default=0 WHERE item_id=%s AND id<>%s", (self.item_id, rid))
-                db.exec("DELETE FROM rou_routing_d WHERE routing_id=%s", (rid,))
-                for l in lines:
-                    l = {k: v for k, v in l.items() if k in [x[0] for x in ROU_LINES]}
-                    l.update(routing_id=rid, op_name=l.get("op_name") or "工序 %s" % l["op_seq"],
-                             setup_hours=l.get("setup_hours") or 0, run_hours=l.get("run_hours") or 0,
-                             is_outsource=int(bool(l.get("is_outsource"))), is_report_point=int(bool(l.get("is_report_point"))))
-                    db.exec("INSERT INTO rou_routing_d (%s) VALUES (%s)" % (", ".join(l), ", ".join(["%s"] * len(l))),
-                            list(l.values()))
-        if c.guard(go, ok="途程已儲存"):
+        if c.guard(self.b.save_routing, self.item_id, self.h and self.h["id"], h, lines, ok="途程已儲存"):
             self.reload()
             self.render()

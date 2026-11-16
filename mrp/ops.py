@@ -32,6 +32,7 @@ class Ops:
     # ================================================================ 一般單據
     def doc(self, kind, doc_id):
         d = DOCS[kind]
+        self.need(d["func"], 1)
         h = self.db.row("SELECT * FROM %s WHERE id=%%s" % d["head"], (doc_id,))
         if not h:
             raise BizError("找不到單據")
@@ -124,6 +125,7 @@ class Ops:
 
     def doc_list(self, kind, keyword="", status=None, limit=300):
         d = DOCS[kind]
+        self.need(d["func"], 1)
         party = {"SO": ("sal_customer", "customer_id", "cust_name"), "PO": ("pur_supplier", "supplier_id", "sup_name")}
         join, pcol = "", "''"
         if kind in party:
@@ -145,6 +147,7 @@ class Ops:
 
     # ================================================================ 採購
     def source_for(self, item_id, supplier_id, country=None):
+        self.need("PUR", 1)
         return self.db.row("SELECT * FROM pur_item_source WHERE item_id=%s AND supplier_id=%s AND (%s IS NULL OR "
                            "origin_country=%s) ORDER BY priority LIMIT 1", (item_id, supplier_id, country, country)) \
             or self.db.row("SELECT * FROM pur_item_source WHERE item_id=%s AND supplier_id=%s ORDER BY priority LIMIT 1",

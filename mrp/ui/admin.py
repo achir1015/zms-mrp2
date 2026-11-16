@@ -91,7 +91,7 @@ class Company(ft.Column):
     def __init__(self, ctx):
         self.ctx, self.b = ctx, ctx.books
         self.f = Form(ctx.look, COMPANY, self.b.company(), disabled=not self.b.can("SYS", 2))
-        params = self.b.db.rows("SELECT * FROM sys_param ORDER BY param_key")
+        params = self.b.v("params")
         self.pf = {p["param_key"]: T.field(p["description"] or p["param_key"], p["param_value"], width=200) for p in params}
         super().__init__([T.page_header(I.BUSINESS, "公司設定", "公司資料與系統參數", "blue"),
                           T.card(ft.Column([self.f, ft.Divider(), ft.Text("系統參數", size=15, weight=ft.FontWeight.W_700),
@@ -240,8 +240,7 @@ class Update(ft.Column):
 
 class Audit(ft.Column):
     def __init__(self, ctx):
-        rows = ctx.books.db.rows("SELECT a.created_at, u.user_name, a.action, a.table_name, a.record_key, a.func_code FROM "
-                                 "sys_audit_log a LEFT JOIN sys_user u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 800")
+        rows = ctx.books.v("audit")
         g = T.Grid([("created_at", "時間", "d", 130), ("user_name", "使用者", "s", 100), ("action", "動作", "s", 70),
                     ("func_code", "模組", "s", 50), ("table_name", "資料表", "s", 140), ("record_key", "單號／鍵值", "s", 200)])
         g.set_rows(rows)
@@ -275,3 +274,168 @@ class Demo(ft.Column):
         if self.ctx.guard(self.ctx.books.load_demo, ok="已載入電子業範例資料"):
             self.ctx.look.clear()
             self.ctx.app.go("mps")
+
+
+def qr_png(text, box=6):
+    import io
+
+    import qrcode
+    q = qrcode.QRCode(border=2, box_size=box, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    q.add_data(text)
+    q.make(fit=True)
+    buf = io.BytesIO()
+    q.make_image(fill_color="#2E1065", back_color="white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def deep_link(url):
+    import urllib.parse
+    return "zmsmrp2://connect?u=" + urllib.parse.quote(url, safe="")
+
+
+class MobileLink(ft.Column):
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.app = ctx.app
+        st = self.app.st
+        self.port = T.field("連接埠", str(st.extra.get("api_port") or 8795), width=110)
+        self.sw = T.switch("啟用手機連線服務", bool(self.app.api and self.app.api.running), on_change=self.toggle)
+        self.status = ft.Container()
+        self.urls = ft.Row(wrap=True, spacing=14, run_spacing=14)
+        # 外出連線（Cloudflare 通道）
+        x = st.extra
+        self.t_mode = ft.RadioGroup(value=x.get("tunnel_mode") or "quick", on_change=lambda e: self.render_tunnel(),
+                                    content=ft.Column([
+                                        ft.Radio(value="quick", label="快速通道（免帳號；網址每次啟動會改變，手機要重新掃描）"),
+                                        ft.Radio(value="token", label="固定網址（需要 Cloudflare 帳號與自己的網域）")],
+                                        spacing=0))
+        self.t_token = T.field("Cloudflare 通道權杖（Tunnel token）", x.get("tunnel_token", ""), password=True,
+                               can_reveal_password=True, width=520)
+        self.t_url = T.field("公開網址", x.get("tunnel_url", ""), width=520, hint_text="例：https://mrp.mycompany.com")
+        self.t_fixed = ft.Column([self.t_token, self.t_url,
+                                  T.muted("在 Cloudflare 網站 Zero Trust → Networks → Tunnels 建立通道，"
+                                          "Public Hostname 的服務填 http://localhost:" +
+                                          str(x.get("api_port") or 8795) + "，再把權杖與網址貼在這裡。", 12)],
+                                 spacing=10)
+        self.t_sw = T.switch("啟用外出連線", bool(getattr(self.app, "tunnel", None) and self.app.tunnel.running),
+                             on_change=self.toggle_tunnel)
+        self.t_bar = ft.ProgressBar(visible=False, color=T.ACCENT, bgcolor="#E6F4F1", bar_height=6, border_radius=3)
+        self.t_status = ft.Container()
+        self.t_qr = ft.Container()
+        outside = T.card(ft.Column([
+            ft.Row([T.icon_tile(ft.Icons.PUBLIC, "violet", 44),
+                    ft.Column([ft.Text("外出連線（Cloudflare 加密通道）", size=15, weight=ft.FontWeight.W_700),
+                               T.muted("手機在外面用行動網路也能連回這台電腦；全程 HTTPS 加密，不需要設定路由器。"
+                                       "第一次啟用會自動下載 Cloudflare 官方的 cloudflared 程式。", 12)],
+                              spacing=2, expand=True)], spacing=12),
+            self.t_mode, self.t_fixed, ft.Row([self.t_sw, self.t_status], spacing=16, wrap=True), self.t_bar,
+            self.t_qr], spacing=12), padding=18)
+        super().__init__([
+            T.page_header(ft.Icons.PHONE_ANDROID, "手機連線", "讓 Android／iPhone／iPad 透過這台電腦使用 MRP II 系統", "rose"),
+            T.card(ft.Column([
+                ft.Row([self.sw, self.port, self.status], spacing=18,
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True),
+                T.muted("手機用自己的帳號密碼登入，權限與電腦版相同；手機不會直接連資料庫。"
+                        "這台電腦要保持開機並開著 MRP II 系統，手機才連得到。", 12),
+                T.muted("第一次啟用時，Windows 會詢問是否允許網路存取，請勾選「私人網路」後按「允許」。", 12)],
+                spacing=10), padding=18),
+            ft.Text("公司內（同一個 Wi-Fi）", size=16, weight=ft.FontWeight.W_700),
+            self.urls, outside],
+            spacing=14, expand=True, scroll=ft.ScrollMode.AUTO)
+        self.render(refresh=False)
+        self.render_tunnel(refresh=False)
+
+    def render_tunnel(self, refresh=True):
+        t = getattr(self.app, "tunnel", None)
+        on = bool(t and t.running and t.url)
+        self.t_fixed.visible = self.t_mode.value == "token"
+        self.t_status.content = T.chip("已連線：%s" % t.url if on else "已關閉", "green" if on else "slate",
+                                       ft.Icons.PUBLIC if on else ft.Icons.PUBLIC_OFF)
+        if on:
+            self.t_qr.content = ft.Row([
+                ft.Image(src=qr_png(deep_link(t.url)), width=200, height=200),
+                ft.Column([ft.Text(t.url, size=15, weight=ft.FontWeight.W_700, color=T.PRIMARY, selectable=True),
+                           T.muted("在公司時先掃這個 QR Code；手機會記住，外出時自動改用這個網址。", 12),
+                           T.muted("快速通道每次重新啟動網址都會改變，屆時請重新掃描。" if t.mode == "quick" else
+                                   "固定網址不會改變，掃描一次即可。", 12)], spacing=6, expand=True)],
+                spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        else:
+            self.t_qr.content = None
+        if refresh:
+            self.update()
+
+    def toggle_tunnel(self, e):
+        x = self.app.st.extra
+        x["tunnel_mode"] = self.t_mode.value
+        x["tunnel_token"] = (self.t_token.value or "").strip()
+        x["tunnel_url"] = (self.t_url.value or "").strip()
+        if not self.t_sw.value:
+            self.app.stop_tunnel()
+            x["tunnel_enabled"] = False
+            self.app.st.save()
+            self.ctx.books.log("TUNNEL", "", "off")
+            self.render_tunnel()
+            return
+        self.t_bar.visible, self.t_bar.value = True, None
+        self.t_status.content = T.chip("連線中（第一次會先下載 cloudflared）…", "amber", ft.Icons.HOURGLASS_TOP)
+        self.update()
+
+        def work():
+            def prog(v):
+                self.t_bar.value = v
+                self.t_bar.update()
+            try:
+                url = self.app.start_tunnel(progress=prog)
+                x["tunnel_enabled"], x["api_enabled"] = True, True
+                self.app.st.save()
+                self.ctx.books.log("TUNNEL", "", url)
+                self.sw.value = True
+            except Exception as ex:
+                self.t_sw.value = False
+                self.ctx.toast("外出連線失敗：%s" % ex, True)
+            self.t_bar.visible = False
+            self.render(refresh=False)
+            self.render_tunnel()
+        self.ctx.page.run_thread(work)
+
+    def toggle(self, e):
+        st = self.app.st
+        try:
+            st.extra["api_port"] = int(self.port.value or 8795)
+        except ValueError:
+            self.ctx.toast("連接埠要是數字", True)
+            return
+        if self.sw.value:
+            self.app.stop_api()
+            if not self.ctx.guard(self.app.start_api):
+                self.sw.value = False
+        else:
+            self.app.stop_api()
+        st.extra["api_enabled"] = bool(self.sw.value)
+        st.save()
+        self.ctx.books.log("MOBILE", "", "on" if self.sw.value else "off")
+        if not self.sw.value:
+            self.t_sw.value = False                 # 關掉手機連線，外出通道也一起停止
+        self.render_tunnel(refresh=False)
+        self.render()
+
+    def render(self, refresh=True):
+        from ..api import lan_addresses
+        on = bool(self.app.api and self.app.api.running)
+        self.status.content = T.chip("服務執行中（%d 個手機登入中）" % len(self.app.api.sessions) if on else "已關閉",
+                                     "green" if on else "slate", ft.Icons.WIFI_TETHERING if on else ft.Icons.WIFI_OFF)
+        cards = []
+        if on:
+            port = self.app.api.port
+            for ip in lan_addresses() or ["127.0.0.1"]:
+                url = "http://%s:%d" % (ip, port)
+                cards.append(T.card(ft.Column([
+                    ft.Image(src=qr_png(deep_link(url)), width=200, height=200),
+                    ft.Text(url, size=16, weight=ft.FontWeight.W_700, color=T.PRIMARY, selectable=True),
+                    T.muted("手機相機掃描，或在 App 輸入這個網址", 11)],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8), padding=16, width=260))
+        else:
+            cards.append(T.empty_state(ft.Icons.PHONELINK_OFF, "手機連線服務已關閉", "打開上方開關後，這裡會顯示 QR Code"))
+        self.urls.controls = cards
+        if refresh:
+            self.update()

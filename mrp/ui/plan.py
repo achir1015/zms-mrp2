@@ -29,8 +29,7 @@ class MpsScreen(ft.Row):
         self.open(mps_id or (self.rows[0]["id"] if self.rows else None), refresh=False)
 
     def reload(self, refresh=True):
-        self.rows = self.b.db.rows("SELECT h.*, (SELECT COUNT(*) FROM mps_plan_d d WHERE d.mps_id=h.id) n_lines FROM "
-                                   "mps_plan_h h ORDER BY h.id DESC")
+        self.rows = self.b.v("mps_list")
         self.grid.set_rows(self.rows)
         if refresh:
             self.update()
@@ -40,11 +39,8 @@ class MpsScreen(ft.Row):
         if not mid:
             self.panel.controls = [T.empty_state(I.EVENT_NOTE, "還沒有主生產排程", "按「產生 MPS」由客戶訂單與預測產生")]
         else:
-            h = self.b.db.row("SELECT * FROM mps_plan_h WHERE id=%s", (mid,))
-            lines = self.b.db.rows("SELECT d.*, i.item_code, i.item_name, (SELECT GROUP_CONCAT(o.so_no SEPARATOR '、') FROM "
-                                   "mps_demand_link k JOIN sal_order_d sd ON sd.id=k.so_line_id JOIN sal_order_h o ON "
-                                   "o.id=sd.so_id WHERE k.mps_line_id=d.id) orders FROM mps_plan_d d JOIN itm_item i ON "
-                                   "i.id=d.item_id WHERE d.mps_id=%s ORDER BY i.item_code, d.period_start", (mid,))
+            h = self.b.v("mps_head", mid)
+            lines = self.b.v("mps_lines", mid)
             g = T.Grid([("item_code", "料件", "s", 110), ("item_name", "品名", "s", 170), ("period_start", "需求日", "d", 90),
                         ("forecast_qty", "預測", "qz", 70), ("order_qty", "訂單", "qz", 70), ("mps_qty", "MPS 量", "q", 80),
                         ("orders", "來源訂單", "s", 160)], on_pick=self.edit_qty)
@@ -97,8 +93,8 @@ class MpsScreen(ft.Row):
             except Exception:
                 c.toast("數字或日期格式不正確", True)
                 return
-            self.b.db.exec("UPDATE mps_plan_d SET mps_qty=%s, period_start=%s, is_firm=1 WHERE id=%s", (v, day, r["id"]))
-            self.b.log("EDIT", "mps_plan_d", r["id"], {"mps_qty": v}, "MPS")
+            if not c.guard(self.b.update_mps_line, r["id"], v, day):
+                return
             c.close()
             self.open(self.mid)
         c.dialog("修改 MPS：%s" % r["item_code"], ft.Row([d, q]), [T.btn("取消", kind="ghost", on_click=lambda e: c.close()),
@@ -111,7 +107,8 @@ class MpsScreen(ft.Row):
 
     def void(self):
         def go():
-            self.b.db.exec("UPDATE mps_plan_h SET status='X' WHERE id=%s", (self.mid,))
+            if not self.ctx.guard(self.b.void_mps, self.mid):
+                return
             self.reload(refresh=False)
             self.open(self.mid)
         self.ctx.confirm("作廢主生產排程", "作廢後不能再執行 MRP，確定嗎？", go, yes="作廢")
@@ -123,7 +120,7 @@ class MrpScreen(ft.Column):
         self.ctx, self.b = ctx, ctx.books
         self.editable = self.b.can("MRP", 2)
         mps = [(r["id"], "%s（%s）" % (r["mps_no"], rocdate.show(r["plan_date"]))) for r in
-               self.b.db.rows("SELECT * FROM mps_plan_h WHERE status<>'X' ORDER BY id DESC")]
+               self.b.v("mps_open")]
         self.mps = T.dropdown("主生產排程", mps, mps_id or (mps[0][0] if mps else None), width=260, filterable=False)
         self.start = T.date_field("計畫起日", width=160)
         self.ss = T.switch("考慮安全存量", True)
@@ -161,9 +158,9 @@ class MrpScreen(ft.Column):
             if refresh:
                 self.update()
             return
-        r = self.b.db.row("SELECT * FROM mrp_run WHERE id=%s", (rid,))
-        n_exc = self.b.db.value("SELECT COUNT(*) FROM mrp_exception WHERE run_id=%s", (rid,))
-        pdl = self.b.db.value("SELECT COUNT(*) FROM mrp_exception WHERE run_id=%s AND msg_type='PDL'", (rid,))
+        r = self.b.v("mrp_run_row", rid)
+        n_exc = self.b.v("mrp_exc_count", rid)
+        pdl = self.b.v("mrp_pdl_count", rid)
         self.summary.controls = [T.chip("料件 %s" % r["item_count"], "blue"), T.chip("計畫訂單 %s" % r["planned_count"], "teal"),
                                  T.chip("例外 %s" % n_exc, "orange"), *([T.chip("逾期 %s" % pdl, "rose", I.WARNING)] if pdl else [])]
         getattr(self, "r_" + tab_value(self.tab))(rid)

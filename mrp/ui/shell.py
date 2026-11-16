@@ -75,6 +75,7 @@ def menu():
             ("company", "公司設定", I.BUSINESS, "SYS", 2),
             ("backup", "備份與還原", I.BACKUP, "SYS", 2),
             ("update", "版本更新與捷徑", I.SYSTEM_UPDATE, "", 0),
+            ("mobile_link", "手機連線", I.PHONE_ANDROID, "SYS", 2),
             ("audit", "操作紀錄", I.HISTORY, "SYS", 1),
             ("demo", "範例資料", I.ROCKET_LAUNCH, "SYS", 2)]),
         ("說明", I.HELP_CENTER, "green", [("help", "使用說明", I.HELP_CENTER, "", 0)]),
@@ -90,7 +91,7 @@ def build_screen(sid, ctx, **kw):
         "mps": plan.MpsScreen, "mrp_run": plan.MrpScreen, "planned": lambda c, **k: plan.MrpScreen(c, tab="po", **k),
         "crp": plan.CrpScreen, "wo": shop.WorkOrders, "stock": stock.StockQuery, "inv_ops": stock.InvOps,
         "cost": cost.CostScreen, "users": admin.Users, "company": admin.Company, "backup": admin.Backup,
-        "update": admin.Update, "audit": admin.Audit, "demo": admin.Demo, "help": helpview.Help,
+        "update": admin.Update, "audit": admin.Audit, "mobile_link": admin.MobileLink, "demo": admin.Demo, "help": helpview.Help,
     }
     if sid in table:
         return table[sid](ctx, **kw)
@@ -108,6 +109,12 @@ class App:
         self.current = "home"
         self.expanded = {"總覽", "生產規劃"}
         self.update_info = None
+        self.reports = None
+        self.mobile = False
+        self.api = None              # 電腦版：手機連線服務
+        self.client = None           # 手機版：連到電腦的用戶端
+        self.server_info = None
+        self.tunnel = None
 
     # ================================================================ 啟動
     def start(self):
@@ -121,6 +128,11 @@ class App:
         p.bgcolor = T.BG
         p.padding = 0
         p.spacing = 0
+        from . import mobile
+        if mobile.is_mobile(p):
+            self.mobile = True
+            mobile.start(self)
+            return
         try:
             p.window.width, p.window.height = 1500, 920
             p.window.min_width, p.window.min_height = 1200, 720
@@ -166,7 +178,14 @@ class App:
             self.st.save()
             self.books = Biz(self.db)
             self.ctx = T.Ctx(self)
-            self.ctx.look = Lookups(self.db)
+            self.ctx.look = Lookups(self.books)
+            if self.st.extra.get("api_enabled"):
+                try:
+                    self.start_api()
+                except Exception:
+                    log.exception("api autostart")
+            if self.st.extra.get("tunnel_enabled"):
+                threading.Thread(target=self._autostart_tunnel, daemon=True).start()
             self.login()
         except Exception as e:
             log.exception("boot")
@@ -263,8 +282,15 @@ class App:
 
     def main(self):
         p = self.page
-        self.groups = [(g, ic, tone, [it for it in items if self.allowed(it[3], it[4])]) for g, ic, tone, items in menu()]
+        from . import mobile
+        hide = mobile.DESKTOP_ONLY if self.mobile else set()
+        self.groups = [(g, ic, tone, [it for it in items if self.allowed(it[3], it[4]) and it[0] not in hide])
+                       for g, ic, tone, items in menu()]
         self.groups = [g for g in self.groups if g[3]]
+        if self.mobile and T.MOBILE:
+            self.expanded = set()
+            mobile.main(self)
+            return
         self.sidebar = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, expand=True)
         u = self.books.user
         avatar = ft.Container(ft.Text(u["user_name"][:1], color=ft.Colors.WHITE, weight=ft.FontWeight.W_700), width=36,
@@ -303,7 +329,10 @@ class App:
         p.controls.clear()
         p.add(ft.Row([side, ft.Column([top, self.body], expand=True, spacing=0)], expand=True, spacing=0))
         self.go("home")
-        threading.Thread(target=self._check_update, daemon=True).start()
+        if self.mobile:                              # iPad：資料在電腦上，更新檢查走手機版的方式
+            p.run_thread(mobile.check_update, self)
+        else:
+            threading.Thread(target=self._check_update, daemon=True).start()
 
     def render_sidebar(self):
         items = []
@@ -366,8 +395,16 @@ class App:
                                ft.Icon(ft.Icons.CHEVRON_RIGHT, size=16, color=T.MUTED),
                                ft.Text(it[1], size=15, weight=ft.FontWeight.W_700, color=T.TEXT)]
         self.render_sidebar()
+        if self.mobile and T.MOBILE:
+            from . import mobile
+            self.title.value = it[1]
+            self.page.run_task(mobile.close_drawer, self.page)
         try:
-            self.body.content = build_screen(sid, self.ctx, **kw)
+            content = build_screen(sid, self.ctx, **kw)
+            if self.mobile and T.MOBILE:
+                T.mobilize(content)
+                content = ft.Column([content], scroll=ft.ScrollMode.AUTO, expand=True)
+            self.body.content = content
         except Exception as e:
             log.exception("screen %s", sid)
             self.body.content = T.empty_state(ft.Icons.ERROR_OUTLINE, "畫面載入失敗", str(e))
@@ -425,6 +462,11 @@ class App:
         speaker.stop()
         self.books.logout()
         self.current = "home"
+        if self.mobile:
+            from . import mobile
+            self.page.drawer = None
+            mobile.login(self)
+            return
         self.login()
 
     # ================================================================ 資料庫設定
@@ -486,8 +528,49 @@ class App:
             self.shutdown()
             await self.page.window.destroy()
 
+    # ================================================================ 手機連線服務（電腦版）
+    def start_api(self):
+        from ..api import ApiServer
+        if self.api and self.api.running:
+            return
+        self.api = ApiServer(self.db, port=int(self.st.extra.get("api_port") or 8795))
+        self.api.start()
+
+    def stop_api(self):
+        self.stop_tunnel()
+        if self.api:
+            self.api.stop()
+            self.api = None
+
+    def _autostart_tunnel(self):
+        try:
+            self.start_tunnel()
+        except Exception:
+            log.exception("tunnel autostart")
+
+    def start_tunnel(self, progress=None):
+        """外出連線（Cloudflare 通道）。"""
+        from ..tunnel import Tunnel
+        self.start_api()
+        x = self.st.extra
+        if self.tunnel and self.tunnel.running:
+            return self.tunnel.url
+        self.tunnel = Tunnel(self.api.port, x.get("tunnel_mode") or "quick", x.get("tunnel_token", ""), x.get("tunnel_url", ""))
+        url = self.tunnel.start(progress=progress)
+        log.info("tunnel: %s %s", self.tunnel.mode, url)
+        return url
+
+    def stop_tunnel(self):
+        if self.tunnel:
+            self.tunnel.stop()
+            self.tunnel = None
+
     def shutdown(self):
         speaker.stop()
+        try:
+            self.stop_api()
+        except Exception:
+            pass
         try:
             if self.books and self.books.user:
                 self.books.logout()

@@ -49,7 +49,7 @@ class StockQuery(ft.Row):
             self.title.value = "選擇料件查看明細"
             self.body.controls = [T.muted("點選左邊的料件")]
         else:
-            it = self.b.db.row("SELECT * FROM itm_item WHERE id=%s", (self.item_id,))
+            it = self.b.v("item", self.item_id)
             self.title.value = "%s　%s" % (it["item_code"], it["item_name"])
             t = tab_value(self.tab)
             if t == "lot":

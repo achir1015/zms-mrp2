@@ -15,15 +15,8 @@ class Dashboard(ft.Column):
     def __init__(self, ctx):
         self.ctx = ctx
         b = ctx.books
-        v = b.db.value
-        go = ctx.app.go
-        items = v("SELECT COUNT(*) FROM itm_item WHERE is_active=1")
-        so = v("SELECT COUNT(*) FROM sal_order_h WHERE status IN ('A','P')")
-        po = v("SELECT COALESCE(SUM((d.qty-d.received_qty)*d.unit_price*h.exchange_rate),0) FROM pur_order_d d JOIN pur_order_h h "
-               "ON h.id=d.po_id WHERE d.status='O' AND h.status IN ('A','P')")
-        wo = v("SELECT COUNT(*) FROM sfc_work_order WHERE status IN ('R','S')")
-        val = v("SELECT COALESCE(SUM(remaining_qty*unit_cost),0) FROM inv_layer WHERE is_closed=0")
-        run = b.db.row("SELECT * FROM mrp_run WHERE status='D' ORDER BY id DESC LIMIT 1")
+        d = b.dashboard_data()
+        items, so, po, wo, val, run = d["items"], d["so"], d["po"], d["wo"], d["value"], d["run"]
         kp = T.kpis([T.kpi("料件", str(items), I.CATEGORY, "teal", on_click=lambda e: go("items")),
                      T.kpi("未結客戶訂單", str(so), I.ASSIGNMENT, "green", on_click=lambda e: go("so")),
                      T.kpi("在途採購（NT$）", T.amt(round(po)), I.LOCAL_SHIPPING, "orange", on_click=lambda e: go("po")),
@@ -50,15 +43,13 @@ class Dashboard(ft.Column):
                                             T.btn("查看全部", I.OPEN_IN_NEW, lambda e: go("mrp_run", run_id=run["id"], tab="exc"),
                                                   kind="ghost")]), g], spacing=8), expand=True, padding=16)
         else:
-            empty = b.has_business_data()
+            empty = d["has_data"]
             exc = T.card(ft.Column([ft.Text("開始使用", size=15, weight=ft.FontWeight.W_700),
                                     T.muted("還沒有執行過 MRP。" + ("請建立 MPS 後執行 MRP。" if empty else
                                                                 "可以先到「系統管理 → 範例資料」載入電子業範例試跑。")),
                                     T.btn("載入電子業範例" if not empty else "主生產排程", I.ROCKET_LAUNCH,
                                           lambda e: go("demo" if not empty else "mps"))], spacing=10), expand=True, padding=16)
-        load = b.db.rows("SELECT w.wc_code, w.wc_name, MAX(l.load_pct) mx, SUM(l.load_pct>100) over_days FROM crp_load l "
-                         "JOIN rou_work_center w ON w.id=l.wc_id WHERE l.run_id=(SELECT MAX(id) FROM crp_run) GROUP BY w.id "
-                         "ORDER BY mx DESC")
+        load = d["load"]
         bars = []
         for r in load:
             pct = float(r["mx"] or 0)
@@ -71,7 +62,7 @@ class Dashboard(ft.Column):
                                                 expand=True), T.btn("CRP", I.OPEN_IN_NEW, lambda e: go("crp"), kind="ghost")]),
                                 *(bars or [T.muted("尚未執行產能運算")])], spacing=10, scroll=ft.ScrollMode.AUTO),
                      width=420, padding=16)
-        comp = b.company().get("company_name") or ""
+        comp = d["company"]
         super().__init__([
             ft.Row([ft.Column([ft.Text("您好，%s" % b.user["user_name"], size=24, weight=ft.FontWeight.W_800),
                                T.muted("%s　資料助秘之物料需求II生產製造系統 v%s" % (comp, APP_VERSION))], spacing=2,

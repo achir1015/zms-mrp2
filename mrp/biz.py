@@ -5,9 +5,10 @@ from .core import Base, BizError
 from .inventory import Inventory
 from .ops import Ops
 from .planning import Planning
+from .screens import Screens
 
 
-class Biz(Base, Inventory, Planning, Ops):
+class Biz(Base, Inventory, Planning, Ops, Screens):
     def has_business_data(self):
         return bool(self.db.value("SELECT COUNT(*) FROM itm_item"))
 

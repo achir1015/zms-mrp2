@@ -307,10 +307,12 @@ class Planning:
 
     # ================================================================ 查詢
     def mrp_runs(self):
+        self.need("MRP", 1)
         return self.db.rows("SELECT r.*, m.mps_no, u.user_name FROM mrp_run r JOIN mps_plan_h m ON m.id=r.mps_id "
                             "LEFT JOIN sys_user u ON u.id=r.run_by ORDER BY r.id DESC LIMIT 100")
 
     def mrp_records(self, run_id, keyword=""):
+        self.need("MRP", 1)
         args = [run_id]
         kw = ""
         if keyword:
@@ -323,6 +325,7 @@ class Planning:
             "WHERE r.run_id=%s" + kw + " ORDER BY i.low_level_code, i.item_code, r.period_start", args)
 
     def planned_orders(self, run_id, status=None):
+        self.need("MRP", 1)
         return self.db.rows(
             "SELECT p.*, i.item_code, i.item_name, s.sup_name, rv.rev_code FROM mrp_planned_order p "
             "JOIN itm_item i ON i.id=p.item_id LEFT JOIN pur_supplier s ON s.id=p.supplier_id "
@@ -330,11 +333,13 @@ class Planning:
             % ("%s", " AND p.status IN (%s)" % ",".join("'%s'" % x for x in status) if status else ""), (run_id,))
 
     def exceptions(self, run_id):
+        self.need("MRP", 1)
         return self.db.rows("SELECT e.*, i.item_code, i.item_name FROM mrp_exception e JOIN itm_item i ON i.id=e.item_id "
                             "WHERE e.run_id=%s ORDER BY FIELD(e.msg_type,'PDL','EXP','SFT','NEW','DLY','CAN'), "
                             "i.item_code", (run_id,))
 
     def pegging(self, run_id, item_id):
+        self.need("MRP", 1)
         return self.db.rows(
             "SELECT g.need_date, g.need_qty, g.source_type, pi.item_code parent_code, pi.item_name parent_name, "
             "pp.qty parent_qty, pp.release_date parent_release, m.mps_no FROM mrp_pegging g "
@@ -485,13 +490,16 @@ class Planning:
         return rid
 
     def crp_runs(self):
+        self.need("CRP", 1)
         return self.db.rows("SELECT c.*, m.run_no mrp_no, p.mps_no FROM crp_run c LEFT JOIN mrp_run m ON m.id=c.mrp_run_id "
                             "LEFT JOIN mps_plan_h p ON p.id=c.mps_id ORDER BY c.id DESC LIMIT 60")
 
     def crp_load(self, run_id):
+        self.need("CRP", 1)
         return self.db.rows("SELECT l.*, w.wc_code, w.wc_name, w.is_bottleneck FROM crp_load l JOIN rou_work_center w "
                             "ON w.id=l.wc_id WHERE l.run_id=%s ORDER BY w.wc_code, l.period_start", (run_id,))
 
     def crp_detail(self, load_id):
+        self.need("CRP", 1)
         return self.db.rows("SELECT d.*, i.item_code, i.item_name FROM crp_load_detail d JOIN itm_item i ON i.id=d.item_id "
                             "WHERE d.load_id=%s ORDER BY d.source_doc_no", (load_id,))

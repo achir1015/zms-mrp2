@@ -12,45 +12,16 @@ import flet as ft
 from .. import rocdate
 from . import theme as T
 
-LOOKUPS = {
-    "items": "SELECT id k, CONCAT(item_code,'　',item_name) t FROM itm_item WHERE is_active=1 ORDER BY item_code",
-    "items_all": "SELECT id k, CONCAT(item_code,'　',item_name) t FROM itm_item ORDER BY item_code",
-    "items_mfg": "SELECT id k, CONCAT(item_code,'　',item_name) t FROM itm_item WHERE is_active=1 AND source_type<>'P' "
-                 "ORDER BY item_code",
-    "suppliers": "SELECT id k, CONCAT(sup_code,'　',COALESCE(short_name,sup_name)) t FROM pur_supplier WHERE is_active=1 "
-                 "ORDER BY sup_code",
-    "customers": "SELECT id k, CONCAT(cust_code,'　',COALESCE(short_name,cust_name)) t FROM sal_customer WHERE is_active=1 "
-                 "ORDER BY cust_code",
-    "warehouses": "SELECT id k, CONCAT(wh_code,'　',wh_name) t FROM bas_warehouse WHERE is_active=1 ORDER BY wh_code",
-    "employees": "SELECT id k, CONCAT(emp_code,'　',emp_name) t FROM bas_employee WHERE is_active=1 ORDER BY emp_code",
-    "depts": "SELECT id k, CONCAT(dept_code,'　',dept_name) t FROM bas_dept WHERE is_active=1 ORDER BY dept_code",
-    "categories": "SELECT id k, CONCAT(cat_code,'　',cat_name) t FROM itm_category ORDER BY cat_code",
-    "units": "SELECT id k, unit_name t FROM bas_unit ORDER BY id",
-    "currencies": "SELECT currency_code k, CONCAT(currency_code,'　',currency_name) t FROM bas_currency WHERE is_active=1 "
-                  "ORDER BY is_base DESC, currency_code",
-    "countries": "SELECT country_code k, CONCAT(country_code,'　',COALESCE(origin_label,country_name)) t FROM bas_country "
-                 "ORDER BY FIELD(country_code,'TW','JP','US','KR','CN') DESC, country_code",
-    "manufacturers": "SELECT id k, CONCAT(mfr_code,'　',mfr_name) t FROM bas_manufacturer WHERE is_active=1 ORDER BY mfr_code",
-    "wcs": "SELECT id k, CONCAT(wc_code,'　',wc_name) t FROM rou_work_center WHERE is_active=1 ORDER BY wc_code",
-    "machines": "SELECT id k, CONCAT(machine_code,'　',machine_name) t FROM rou_machine ORDER BY machine_code",
-    "revisions": "SELECT r.id k, CONCAT(i.item_code,' Rev ',r.rev_code) t FROM itm_revision r JOIN itm_item i ON "
-                 "i.id=r.item_id ORDER BY i.item_code, r.rev_code",
-    "mfr_parts": "SELECT a.id k, CONCAT(a.mfr_part_no,'（',COALESCE(c.origin_label,a.origin_country),'）') t FROM itm_mfr_part a "
-                 "LEFT JOIN bas_country c ON c.country_code=a.origin_country ORDER BY a.mfr_part_no",
-    "periods": "SELECT period k, CONCAT(LEFT(period,4),'/',RIGHT(period,2)) t FROM acc_period ORDER BY period DESC",
-    "boms": "SELECT h.id k, CONCAT(i.item_code,' 版本 ',h.bom_ver) t FROM bom_header h JOIN itm_item i ON "
-            "i.id=h.parent_item_id ORDER BY i.item_code, h.bom_ver",
-}
 
 
 class Lookups:
-    def __init__(self, db):
-        self.db = db
+    def __init__(self, books):
+        self.books = books
         self.cache = {}
 
     def __call__(self, name):
         if name not in self.cache:
-            self.cache[name] = [(r["k"], r["t"]) for r in self.db.rows(LOOKUPS[name])]
+            self.cache[name] = [tuple(x) for x in self.books.lookup(name)]
         return self.cache[name]
 
     def label(self, name, key):

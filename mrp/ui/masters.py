@@ -144,8 +144,7 @@ class MasterList(ft.Row):
 
     def reload(self):
         m = self.m
-        self.rows = self.ctx.books.db.rows("SELECT * FROM %s %s ORDER BY %s" % (
-            m["table"], ("WHERE " + m["where"]) if m.get("where") else "", m["order"]))
+        self.rows = self.ctx.books.master_rows(self.name)
         look = self.ctx.look
         for k, t, typ, w in m["fields"]:
             if typ.startswith("ref:"):
@@ -202,12 +201,7 @@ class MasterList(ft.Row):
         rid = None if self.current is None else self.current[self.pk]
         if rid is not None and self.pk != "id":
             data.pop(self.pk, None)
-        if self.name == "currencies" and data.get("is_base"):
-            b.db.exec("UPDATE bas_currency SET is_base=0")
         if c.guard(b.save_row, self.m["table"], data, rid, self.m["func"], self.pk, ok="已儲存"):
-            if self.name == "calendar":
-                from ..seed import renumber_calendar
-                renumber_calendar(b.db)
             c.look.clear()
             self.reload()
             self.edit(None)
@@ -223,10 +217,8 @@ class MasterList(ft.Row):
         self.ctx.confirm("刪除" + self.m["title"], "確定要刪除這筆資料嗎？", go, yes="刪除")
 
     def gen_calendar(self):
-        import datetime as dt
-        from ..seed import extend_calendar
-        y = dt.date.today().year
-        if self.ctx.guard(extend_calendar, self.ctx.books.db, dt.date(y, 1, 1), dt.date(y + 2, 12, 31),
-                          ok="已產生到 %d 年底（已存在的日期保留原設定）" % (y + 2)):
+        y = self.ctx.guard(self.ctx.books.extend_calendar_years)
+        if y:
+            self.ctx.toast("已產生到 %d 年底（已存在的日期保留原設定）" % y)
             self.reload()
             self.update()

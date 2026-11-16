@@ -30,16 +30,13 @@ class CostScreen(ft.Column):
     def render(self, refresh=True):
         t, p = tab_value(self.tab), self.period.value
         if t == "std":
-            rows = self.b.db.rows("SELECT c.*, i.item_code, i.item_name, i.item_type, i.low_level_code FROM acc_item_cost c JOIN "
-                                  "itm_item i ON i.id=c.item_id WHERE c.cost_type='S' AND c.period=%s ORDER BY "
-                                  "i.low_level_code, i.item_code", (p,))
+            rows = self.b.v("cost_std", p)
             g = T.Grid([("item_code", "料號", "s", 110), ("item_name", "品名", "s", 180), ("item_type", "類型", "st:itype", 70),
                         ("low_level_code", "階", "s", 30), ("material_cost", "材料", "q", 90), ("labor_cost", "人工", "q", 80),
                         ("overhead_cost", "製費", "q", 80), ("total_cost", "標準成本", "q", 100)],
                        empty="本期尚未累算，請按「累算標準成本」")
         elif t == "var":
-            rows = self.b.db.rows("SELECT v.*, i.item_code, i.item_name FROM acc_variance v LEFT JOIN itm_item i ON i.id=v.item_id "
-                                  "WHERE v.period=%s ORDER BY v.id DESC", (p,))
+            rows = self.b.v("cost_var", p)
             names = {"PPV": "採購價差", "MUV": "用料差異", "LEV": "人工效率", "OHV": "製費差異", "YLD": "良率差異",
                      "FXV": "匯兌差異"}
             for r in rows:
@@ -48,10 +45,7 @@ class CostScreen(ft.Column):
                         ("ref_doc_no", "單號", "s", 120), ("amount", "金額（正＝不利）", "n", 110), ("note", "說明", "s", 260)],
                        totals=("amount",), empty="本期沒有成本差異")
         else:
-            rows = self.b.db.rows("SELECT i.item_code, i.item_name, i.item_type, SUM(l.remaining_qty) q, "
-                                  "SUM(l.remaining_qty*l.unit_cost) v, SUM(l.remaining_qty*l.unit_cost)/NULLIF(SUM(l.remaining_qty),0) "
-                                  "avg FROM inv_layer l JOIN itm_item i ON i.id=l.item_id WHERE l.is_closed=0 GROUP BY i.id "
-                                  "ORDER BY v DESC")
+            rows = self.b.v("cost_val")
             g = T.Grid([("item_code", "料號", "s", 110), ("item_name", "品名", "s", 180), ("item_type", "類型", "st:itype", 70),
                         ("q", "剩餘數量", "q", 90), ("avg", "先進先出平均成本", "q", 110), ("v", "存貨價值", "n", 110)],
                        totals=("v",))

@@ -61,10 +61,7 @@ class Items(ft.Row):
         self.render(refresh=False)
 
     def reload(self):
-        self.rows = self.b.db.rows(
-            "SELECT i.*, IF(i.source_type='M','自製',IF(i.source_type='O','委外','採購')) source, i.low_level_code llc, "
-            "r.rev_code rev, p.lead_time_days, p.lot_rule FROM itm_item i LEFT JOIN itm_revision r ON "
-            "r.id=i.current_rev_id LEFT JOIN itm_plan p ON p.item_id=i.id ORDER BY i.item_code")
+        self.rows = self.b.v("items_list")
         self.filter(refresh=False)
 
     def filter(self, refresh=True):
@@ -82,7 +79,7 @@ class Items(ft.Row):
 
     def render(self, refresh=True):
         t = tab_value(self.tab)
-        it = self.b.db.row("SELECT * FROM itm_item WHERE id=%s", (self.item_id,)) if self.item_id else None
+        it = self.b.v("item", self.item_id) if self.item_id else None
         self.title.value = "%s　%s" % (it["item_code"], it["item_name"]) if it else "新增料件"
         if not it and t != "basic":
             self.body.controls = [T.muted("請先在左邊選一個料件，或在「基本資料」新增料件")]
@@ -103,8 +100,7 @@ class Items(ft.Row):
         extra = [T.btn("新增料件", I.ADD, lambda e: self.open(None), kind="outline")]
         if it:
             extra.append(T.btn("刪除", I.DELETE_OUTLINE, lambda e: self.delete(), kind="danger"))
-            st = self.b.db.row("SELECT COALESCE(SUM(on_hand_qty),0) q FROM inv_balance WHERE item_id=%s", (it["id"],))
-            extra.append(T.chip("庫存 %s" % T.qfmt(st["q"]), "violet", I.WAREHOUSE))
+            extra.append(T.chip("庫存 %s" % T.qfmt(self.b.v("item_stock", it["id"])), "violet", I.WAREHOUSE))
         self.body.controls = [self.f, self._acts(self.save_basic, extra)]
 
     def save_basic(self):
@@ -118,13 +114,8 @@ class Items(ft.Row):
             c.toast("請輸入料號與品名", True)
             return
         new = self.item_id is None
-        rid = c.guard(self.b.save_row, "itm_item", d, self.item_id, "ITM")
+        rid = c.guard(self.b.create_item, d) if new else c.guard(self.b.save_row, "itm_item", d, self.item_id)
         if rid:
-            if new:
-                self.b.db.exec("INSERT IGNORE INTO itm_plan (item_id, default_wh_id) VALUES (%s, (SELECT id FROM "
-                               "bas_warehouse WHERE wh_code=%s))", (rid, "FG" if d["item_type"] == "F" else "RM"))
-                rev = self.b.db.exec("INSERT INTO itm_revision (item_id, rev_code, status) VALUES (%s,'A','A')", (rid,))
-                self.b.db.exec("UPDATE itm_item SET current_rev_id=%s WHERE id=%s", (rev, rid))
             c.toast("已儲存" + ("（已建立計畫參數與版本 A）" if new else ""))
             c.look.clear()
             self.item_id = rid
@@ -133,22 +124,15 @@ class Items(ft.Row):
 
     def delete(self):
         def go():
-            with self.b.db.transaction():      # 任一步驟被擋（已被使用）就整筆還原
-                self.b.db.exec("UPDATE itm_item SET current_rev_id=NULL WHERE id=%s", (self.item_id,))
-                self.b.delete_row("itm_revision", self.item_id, "ITM", "item_id")
-                self.b.delete_row("itm_item", self.item_id, "ITM")
-            self.ctx.toast("已刪除")
-            self.ctx.look.clear()
-            self.item_id = None
-            self.reload()
-            self.render()
-        self.ctx.confirm("刪除料件", "確定要刪除這個料件嗎？（已被 BOM、單據或庫存使用的料件不能刪除，可改為停用）",
-                         lambda: self.ctx.guard(go), yes="刪除")
+            if self.ctx.guard(self.b.delete_item, self.item_id, ok="已刪除"):
+                self.ctx.look.clear()
+                self.item_id = None
+                self.reload()
+                self.render()
+        self.ctx.confirm("刪除料件", "確定要刪除這個料件嗎？（已被 BOM、單據或庫存使用的料件不能刪除，可改為停用）", go, yes="刪除")
 
-    # ---------------------------------------------------------------- 計畫參數
     def r_plan(self, it):
-        self.b.db.exec("INSERT IGNORE INTO itm_plan (item_id) VALUES (%s)", (it["id"],))
-        p = self.b.db.row("SELECT * FROM itm_plan WHERE item_id=%s", (it["id"],))
+        p = self.b.item_plan(it["id"])
         self.f = Form(self.ctx.look, PLAN, p, disabled=not self.editable)
         eoq = T.btn("計算經濟訂購量", I.CALCULATE, lambda e: self.calc_eoq(), kind="outline")
         self.body.controls = [ft.Container(ft.Text("經濟訂購量 EOQ = √(2 × 年需求 × 每次訂購成本 ÷ (單價 × 持有成本率))",
@@ -169,23 +153,13 @@ class Items(ft.Row):
             self.render()
 
     def calc_eoq(self):
-        import math
-        p = self.b.db.row("SELECT p.*, (SELECT s.unit_price*c.exchange_rate FROM pur_item_source s JOIN bas_currency c ON "
-                          "c.currency_code=s.currency_code WHERE s.item_id=p.item_id ORDER BY s.priority LIMIT 1) price "
-                          "FROM itm_plan p WHERE p.item_id=%s", (self.item_id,))
-        if not (p["annual_demand"] and p["order_cost"] and p["price"] and p["holding_rate"]):
-            self.ctx.toast("請先輸入年需求量、每次訂購成本、持有成本率，並在供應來源設定單價", True)
-            return
-        eoq = math.sqrt(2 * float(p["annual_demand"]) * float(p["order_cost"]) / (float(p["price"]) * float(p["holding_rate"])))
-        self.b.db.exec("UPDATE itm_plan SET eoq_qty=%s WHERE item_id=%s", (round(eoq, 4), self.item_id))
-        self.ctx.toast("經濟訂購量 = %s" % T.qfmt(eoq))
-        self.render()
+        eoq = self.ctx.guard(self.b.calc_eoq, self.item_id)
+        if eoq:
+            self.ctx.toast("經濟訂購量 = %s" % T.qfmt(eoq))
+            self.render()
 
-    # ---------------------------------------------------------------- 版本
     def r_rev(self, it):
-        rows = self.b.db.rows("SELECT r.*, p.rev_code prev_code, IF(r.id=%s,'★','') cur FROM itm_revision r "
-                              "LEFT JOIN itm_revision p ON p.id=r.prev_rev_id WHERE r.item_id=%s ORDER BY r.rev_code",
-                              (it["current_rev_id"], it["id"]))
+        rows = self.b.v("item_revisions", it["id"])
         g = T.Grid([("cur", "目前", "s", 34), ("rev_code", "版本", "s", 50), ("status", "狀態", "st:rev", 70),
                     ("effective_date", "生效", "d", 80), ("is_interchangeable", "可互換", "b", 50),
                     ("firmware_ver", "韌體", "s", 70), ("rev_desc", "說明", "s", 120)],
@@ -198,8 +172,7 @@ class Items(ft.Row):
     def rev_dialog(self, r):
         c = self.ctx
         f = Form(c.look, REV, r or {"status": "A", "is_interchangeable": True}, disabled=not self.editable, per_row=2)
-        cur = T.switch("設為目前量產版本", bool(r and r["id"] == self.b.db.value(
-            "SELECT current_rev_id FROM itm_item WHERE id=%s", (self.item_id,))))
+        cur = T.switch("設為目前量產版本", bool(r and r["id"] == self.b.v("item_current_rev", self.item_id)))
 
         def save(e):
             d = f.values()
@@ -207,7 +180,7 @@ class Items(ft.Row):
             rid = c.guard(self.b.save_row, "itm_revision", d, r and r["id"], "ITM")
             if rid:
                 if cur.value:
-                    self.b.db.exec("UPDATE itm_item SET current_rev_id=%s WHERE id=%s", (rid, self.item_id))
+                    self.b.set_current_rev(self.item_id, rid)
                 c.look.clear()
                 c.close()
                 c.toast("版本已儲存")
@@ -219,9 +192,7 @@ class Items(ft.Row):
 
     # ---------------------------------------------------------------- 核可製造商與產地
     def r_aml(self, it):
-        rows = self.b.db.rows("SELECT a.*, m.mfr_name, c.origin_label, r.rev_code FROM itm_mfr_part a JOIN bas_manufacturer m "
-                              "ON m.id=a.manufacturer_id LEFT JOIN bas_country c ON c.country_code=a.origin_country "
-                              "LEFT JOIN itm_revision r ON r.id=a.rev_id WHERE a.item_id=%s ORDER BY a.priority", (it["id"],))
+        rows = self.b.v("item_aml", it["id"])
         g = T.Grid([("priority", "順序", "s", 34), ("mfr_name", "製造商", "s", 110), ("mfr_part_no", "製造商料號", "s", 120),
                     ("origin_label", "產地", "s", 50), ("rev_code", "版本", "s", 40), ("approval_status", "核可", "s", 40)],
                    on_pick=lambda r: self.aml_dialog(r), height=220)
@@ -254,9 +225,7 @@ class Items(ft.Row):
 
     # ---------------------------------------------------------------- 供應來源
     def r_src(self, it):
-        rows = self.b.db.rows("SELECT s.*, p.sup_name, a.mfr_part_no, c.origin_label FROM pur_item_source s JOIN pur_supplier p "
-                              "ON p.id=s.supplier_id LEFT JOIN itm_mfr_part a ON a.id=s.mfr_part_id LEFT JOIN bas_country c "
-                              "ON c.country_code=s.origin_country WHERE s.item_id=%s ORDER BY s.priority", (it["id"],))
+        rows = self.b.v("item_sources", it["id"])
         g = T.Grid([("priority", "順序", "s", 34), ("sup_name", "供應商", "s", 110), ("origin_label", "產地", "s", 44),
                     ("unit_price", "單價", "q", 70), ("currency_code", "幣別", "s", 40), ("lead_days", "交期", "s", 40),
                     ("moq", "MOQ", "q", 50)], height=220)

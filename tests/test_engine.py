@@ -116,3 +116,36 @@ def test_generate_mps_and_cost(biz):
     assert n == 23
     mb = biz.db.row("SELECT * FROM acc_item_cost WHERE item_id=1 AND cost_type='S'")
     assert mb["material_cost"] > 1000 and mb["labor_cost"] > 0
+
+
+def test_views_and_security(biz):
+    """所有具名查詢、下拉選單、主檔清單都能執行；一般維護只接受白名單資料表與合法欄位名稱。"""
+    from mrp.ui.masters import MASTERS
+    from mrp.views import LOOKUPS, VIEWS
+    biz.load_demo()
+    run = biz.run_mrp(1, "2026-11-16")
+    for name, (func, kind, sql) in VIEWS.items():
+        n = sql.count("%s")
+        args = {"wh_by_code": ("RM",), "wo_by_no": ("X",), "cost_std": ("202611",), "cost_var": ("202611",)}.get(name, (1,) * n)
+        if name.startswith("mrp_"):
+            args = (run,)
+        biz.v(name, *args)
+    for name in LOOKUPS:
+        assert isinstance(biz.lookup(name), list)
+    for key in MASTERS:
+        biz.master_rows(key)
+    assert biz.dashboard_data()["items"] == 23
+    with pytest.raises(BizError):
+        biz.v("沒有這個查詢")
+    with pytest.raises(BizError):
+        biz.save_row("sys_user", {"user_name": "x"}, 1)                 # 不在白名單
+    with pytest.raises(BizError):
+        biz.save_row("itm_item", {"item_name=1, id": "x"}, 1)            # 欄位名稱注入
+    with pytest.raises(BizError):
+        biz.save_bom(4, None, {}, [dict(child_item_id=4, qty_per=1)])    # 元件是自己
+    bid = biz.v("bom_head_of", 4)["id"]
+    biz.set_bom_status(bid, "D")
+    lines = biz.v("bom_lines", bid)
+    assert biz.save_bom(4, bid, {"bom_ver": "01", "is_default": True}, lines) == bid
+    assert biz.copy_bom_version(bid) == "02"
+    assert biz.pr_to_po is not None and biz.so_to_wo(1)

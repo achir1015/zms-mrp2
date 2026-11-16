@@ -134,6 +134,7 @@ class Inventory:
 
     # ---------------------------------------------------------------- 查詢
     def stock(self, keyword="", wh_id=None, only_short=False):
+        self.need("INV", 1)
         where, args = ["i.is_active=1"], []
         if keyword:
             where.append("(i.item_code LIKE %s OR i.item_name LIKE %s OR i.spec LIKE %s)")
@@ -156,6 +157,7 @@ class Inventory:
 
     def stock_detail(self, item_id):
         """料件的批號 × 倉庫 × 版本 × 產地明細。"""
+        self.need("INV", 1)
         return self.db.rows(
             "SELECT w.wh_name, t.lot_no, rv.rev_code, rv.status rev_status, c.origin_label, t.date_code, t.received_at, "
             "b.on_hand_qty, b.allocated_qty, w.is_nettable FROM inv_balance b JOIN bas_warehouse w ON w.id=b.warehouse_id "
@@ -164,6 +166,7 @@ class Inventory:
             "ORDER BY w.wh_code, t.received_at", (item_id,))
 
     def layers(self, item_id, open_only=True):
+        self.need("INV", 1)
         return self.db.rows(
             "SELECT l.id, l.received_at, w.wh_name, t.lot_no, c.origin_label, rv.rev_code, l.in_qty, l.remaining_qty, "
             "l.unit_cost, l.remaining_qty*l.unit_cost value, x.doc_type, x.doc_no FROM inv_layer l "
@@ -173,6 +176,7 @@ class Inventory:
             % ("%s", " AND l.is_closed=0" if open_only else ""), (item_id,))
 
     def ledger(self, item_id, start=None, end=None):
+        self.need("INV", 1)
         where, args = ["x.item_id=%s"], [item_id]
         if start:
             where.append("x.txn_time>=%s")

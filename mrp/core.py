@@ -4,6 +4,7 @@
 """
 import datetime as dt
 import json
+import re
 from decimal import ROUND_HALF_UP, Decimal
 
 import pymysql
@@ -11,6 +12,7 @@ import pymysql
 from . import passwords, rocdate
 from .seed import FUNCS
 
+IDENT = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
 CENT = Decimal("0.01")
 Q4 = Decimal("0.0001")
 Q6 = Decimal("0.000001")
@@ -112,6 +114,12 @@ class Base:
             raise BizError("帳號或密碼錯誤")
         if not u["is_active"]:
             raise BizError("此帳號已停用，請洽系統管理員")
+        self._load_user(u)
+        self.db.exec("UPDATE sys_user SET last_login_at=NOW() WHERE id=%s", (u["id"],))
+        self.log("LOGIN", "sys_user", u["user_code"])
+        return self.user
+
+    def _load_user(self, u):
         self.user = u
         roles = self.db.rows("SELECT r.role_code, r.role_name FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id "
                              "WHERE ur.user_id=%s", (u["id"],))
@@ -122,9 +130,15 @@ class Base:
                               "JOIN sys_role_perm p ON p.role_id=ur.role_id WHERE ur.user_id=%s GROUP BY p.func_code",
                               (u["id"],)):
             self.perms[r["func_code"]] = 2 if r["e"] else (1 if r["v"] else 0)
-        self.db.exec("UPDATE sys_user SET last_login_at=NOW() WHERE id=%s", (u["id"],))
-        self.log("LOGIN", "sys_user", u["user_code"])
-        return u
+        self.user["is_admin"] = self.is_admin
+
+    def refresh_user(self):
+        """重新讀取使用者狀態與權限（手機每次呼叫都會做；停用或改權限立即生效）。回傳 False＝已停用。"""
+        u = self.db.row("SELECT * FROM sys_user WHERE id=%s", (self.user_id,))
+        if not u or not u["is_active"]:
+            return False
+        self._load_user(u)
+        return True
 
     def logout(self):
         if self.user:
@@ -197,6 +211,7 @@ class Base:
         return default if v is None else v
 
     def set_param(self, key, value, desc=None):
+        self.need("SYS")
         self.db.exec("INSERT INTO sys_param (param_key, param_value, description) VALUES (%s,%s,%s) "
                      "ON DUPLICATE KEY UPDATE param_value=VALUES(param_value)", (key, str(value), desc))
 
@@ -217,10 +232,35 @@ class Base:
         return Decimal(str(r))
 
     # ================================================================ 一般資料表維護
-    def save_row(self, table, data, row_id=None, func="BAS", key="id"):
+    @staticmethod
+    def _table(table, key=None):
+        """只允許登記過的資料表；權限模組與主鍵由資料表決定（手機呼叫時也不能指定別的）。"""
+        from .views import TABLES
+        if table not in TABLES:
+            raise BizError("不允許維護的資料表：%s" % table)
+        func, pk = TABLES[table]
+        key = key or pk
+        if not IDENT.match(key):
+            raise BizError("欄位名稱不正確")
+        return func, key
+
+    def save_row(self, table, data, row_id=None, func=None, key=None):
         """新增或修改一筆（data 只含要寫入的欄位）。回傳主鍵值。"""
+        func, key = self._table(table, key)
         self.need(func)
         data = {k: (None if v == "" else v) for k, v in data.items()}
+        if not all(IDENT.match(k) for k in data):
+            raise BizError("欄位名稱不正確")
+        if table == "bas_currency" and data.get("is_base"):
+            self.db.exec("UPDATE bas_currency SET is_base=0")
+        try:
+            return self._save_row(table, data, row_id, func, key)
+        finally:
+            if table == "bas_calendar":
+                from .seed import renumber_calendar
+                renumber_calendar(self.db)
+
+    def _save_row(self, table, data, row_id, func, key):
         try:
             if row_id in (None, ""):
                 cols = list(data)
@@ -238,7 +278,8 @@ class Base:
         except pymysql.MySQLError as e:
             raise BizError(friendly_db_error(e))
 
-    def delete_row(self, table, row_id, func="BAS", key="id"):
+    def delete_row(self, table, row_id, func=None, key=None):
+        func, key = self._table(table, key)
         self.need(func)
         try:
             self.db.exec("DELETE FROM `%s` WHERE `%s`=%%s" % (table, key), (row_id,))
@@ -248,6 +289,7 @@ class Base:
 
     # ================================================================ 使用者
     def users(self):
+        self.need("SYS", 1)
         return self.db.rows("SELECT u.id, u.user_code, u.user_name, u.is_active, u.last_login_at, "
                             "GROUP_CONCAT(r.role_name ORDER BY r.id SEPARATOR '、') roles, "
                             "GROUP_CONCAT(r.id ORDER BY r.id) role_ids FROM sys_user u "
@@ -255,6 +297,7 @@ class Base:
                             "GROUP BY u.id ORDER BY u.user_code")
 
     def roles(self):
+        self.need("SYS", 1)
         return self.db.rows("SELECT * FROM sys_role ORDER BY id")
 
     def save_user(self, uid, code, name, role_ids, active=True, password=None, employee_id=None):
@@ -287,6 +330,7 @@ class Base:
         return uid
 
     def role_perms(self, role_id):
+        self.need("SYS", 1)
         return {r["func_code"]: 2 if r["can_edit"] else (1 if r["can_view"] else 0)
                 for r in self.db.rows("SELECT * FROM sys_role_perm WHERE role_id=%s", (role_id,))}
 

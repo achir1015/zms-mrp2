@@ -29,10 +29,7 @@ class WorkOrders(ft.Row):
         self.open(wo_id, refresh=False)
 
     def reload(self, refresh=True):
-        f = self.flt.value
-        where = "WHERE w.status IN ('P','R','S')" if f == "open" else ("WHERE w.status='%s'" % f if f else "")
-        self.grid.set_rows(self.b.db.rows("SELECT w.*, i.item_code, i.item_name FROM sfc_work_order w JOIN itm_item i ON "
-                                          "i.id=w.item_id %s ORDER BY w.id DESC LIMIT 500" % where))
+        self.grid.set_rows(self.b.wo_list(self.flt.value))
         if refresh:
             self.update()
 
@@ -44,19 +41,13 @@ class WorkOrders(ft.Row):
                 self.update()
             return
         b = self.b
-        w = b.db.row("SELECT w.*, i.item_code, i.item_name, r.rev_code, wh.wh_name, so.so_no FROM sfc_work_order w JOIN itm_item i "
-                     "ON i.id=w.item_id LEFT JOIN itm_revision r ON r.id=w.rev_id LEFT JOIN bas_warehouse wh ON "
-                     "wh.id=w.warehouse_id LEFT JOIN sal_order_d sd ON sd.id=w.so_line_id LEFT JOIN sal_order_h so ON "
-                     "so.id=sd.so_id WHERE w.id=%s", (wo_id,))
+        w = b.v("wo_row", wo_id)
         self.w = w
-        mats = b.db.rows("SELECT m.*, i.item_code, i.item_name, c.origin_label FROM sfc_wo_material m JOIN itm_item i ON "
-                         "i.id=m.item_id LEFT JOIN bas_country c ON c.country_code=m.required_country WHERE m.wo_id=%s "
-                         "ORDER BY m.line_no", (wo_id,))
+        mats = b.v("wo_mats", wo_id)
         for m in mats:
             m["left"] = Decimal(m["required_qty"]) - Decimal(m["issued_qty"])
             m["how"] = {"P": "領料", "B": "倒扣", "N": "不發料"}[m["issue_type"]]
-        ops = b.db.rows("SELECT o.*, c.wc_code, c.wc_name FROM sfc_wo_operation o JOIN rou_work_center c ON c.id=o.wc_id "
-                        "WHERE o.wo_id=%s ORDER BY o.op_seq", (wo_id,))
+        ops = b.v("wo_ops", wo_id)
         mg = T.Grid([("item_code", "料號", "s", 100), ("item_name", "品名", "s", 150), ("required_qty", "應領", "q", 70),
                      ("issued_qty", "已領", "qz", 70), ("left", "未領", "qz", 70), ("how", "方式", "s", 50),
                      ("origin_label", "指定產地", "s", 60)], height=220, empty="尚未發放（發放時展開 BOM）")
@@ -66,7 +57,7 @@ class WorkOrders(ft.Row):
                      ("scrap_qty", "不良", "qz", 50), ("status", "狀態", "st:op", 64)], height=180, empty="尚未發放",
                     on_pick=(lambda r: self.report_dialog(r)) if self.editable and w["status"] in ("R", "S") else None)
         og.set_rows(ops)
-        cost = -Decimal(b.db.value("SELECT COALESCE(SUM(amount),0) FROM inv_txn WHERE wo_id=%s AND doc_type='ISS'", (wo_id,)) or 0)
+        cost = Decimal(b.v("wo_mat_cost", wo_id) or 0)
         self.panel.controls = [
             ft.Row([T.icon_tile(I.FACTORY, "teal", 44), ft.Column([
                 ft.Text("%s　%s %s" % (w["wo_no"], w["item_code"], w["item_name"]), size=18, weight=ft.FontWeight.W_800),
@@ -131,17 +122,14 @@ class WorkOrders(ft.Row):
                 c.close()
                 c.toast("已開立工單 %s（計畫狀態），確認後按「發放工單」" % no)
                 self.reload(refresh=False)
-                self.open(self.b.db.value("SELECT id FROM sfc_work_order WHERE wo_no=%s", (no,)))
+                self.open(self.b.v("wo_by_no", no))
         c.dialog("新增工單", ft.Column([item, ft.Row([q, s, f])], tight=True, spacing=12),
                  [T.btn("取消", kind="ghost", on_click=lambda e: c.close()), T.btn("開立", I.ADD, go)],
                  icon=I.FACTORY, tone="teal", width=560)
 
     def issue_dialog(self):
         c = self.ctx
-        mats = self.b.db.rows("SELECT m.*, i.item_code, i.item_name, (SELECT COALESCE(SUM(b.on_hand_qty),0) FROM inv_balance b "
-                              "WHERE b.item_id=m.item_id AND b.warehouse_id=m.warehouse_id) stock FROM sfc_wo_material m JOIN "
-                              "itm_item i ON i.id=m.item_id WHERE m.wo_id=%s AND m.issue_type='P' AND m.required_qty>m.issued_qty "
-                              "ORDER BY m.line_no", (self.wo_id,))
+        mats = self.b.v("wo_issue_mats", self.wo_id)
         if not mats:
             c.toast("沒有需要領的料（倒扣料會在完工時自動扣）", True)
             return
