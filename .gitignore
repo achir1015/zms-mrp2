@@ -11,3 +11,7 @@ dist-installer/
 .pytest_cache/
 packaging/mariadb/
 assets/icon-256.png
+packaging/mariadb-mac/
+build-mac/
+dist-mac/
+build-mac.log

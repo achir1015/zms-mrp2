@@ -1,6 +1,7 @@
 """系統管理：使用者與權限、公司設定、備份還原、版本更新與捷徑、操作紀錄、範例資料。"""
 import datetime as dt
 import os
+import sys
 
 import flet as ft
 
@@ -10,6 +11,7 @@ from . import theme as T
 from .widgets import Form
 
 I = ft.Icons
+MAC = sys.platform == "darwin"
 LEVELS = [("0", "無"), ("1", "查詢"), ("2", "維護")]
 
 
@@ -156,8 +158,10 @@ class Update(ft.Column):
                 expand=True, padding=22),
                 T.card(ft.Column([T.icon_tile(I.SHORTCUT, "teal", 52, radius=16),
                                   ft.Text("桌面捷徑", size=17, weight=ft.FontWeight.W_700),
-                                  T.muted("安裝時已建立桌面與開始功能表捷徑；如果不見了，按下面按鈕重建。", 12),
-                                  T.btn("重建桌面捷徑", I.DESKTOP_WINDOWS, lambda e: self.shortcut(), kind="accent")],
+                                  T.muted("App 在「應用程式」資料夾，可拖到 Dock 常駐；也可以在桌面建立替身。" if MAC else
+                                          "安裝時已建立桌面與開始功能表捷徑；如果不見了，按下面按鈕重建。", 12),
+                                  T.btn("在桌面建立替身" if MAC else "重建桌面捷徑",
+                                        I.DESKTOP_MAC if MAC else I.DESKTOP_WINDOWS, lambda e: self.shortcut(), kind="accent")],
                                  spacing=10), width=340, padding=22)], spacing=14,
                 vertical_alignment=ft.CrossAxisAlignment.START),
             T.card(ft.Column([ft.Text("系統資訊", size=15, weight=ft.FontWeight.W_700),
@@ -231,7 +235,7 @@ class Update(ft.Column):
         self.ctx.page.run_thread(work)
 
     def shortcut(self):
-        self.ctx.guard(maintenance.create_desktop_shortcut, ok="已在桌面建立捷徑")
+        self.ctx.guard(maintenance.create_desktop_shortcut, ok="已在桌面建立替身" if MAC else "已在桌面建立捷徑")
 
 
 class Audit(ft.Column):
