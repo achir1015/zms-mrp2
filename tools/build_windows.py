@@ -37,7 +37,7 @@ def pack():
     shutil.rmtree(os.path.join(HERE, "dist"), ignore_errors=True)
     cmd = [flet, "pack", "main.py", "-D", "-y", "-n", APP_ID, "-i", "packaging/icon.ico", "--distpath", "dist",
            "--add-data", "assets:assets", "--add-data", "mrp/schema.sql:mrp", "--add-data", "mrp/demo_data.sql:mrp",
-           "--hidden-import", "edge_tts", "--hidden-import", "pymysql",
+           "--hidden-import", "edge_tts", "--hidden-import", "pymysql", "--hidden-import", "qrcode", "--hidden-import", "qrcode.image.pil",
            "--product-name", APP_NAME, "--file-description", APP_NAME, "--product-version", APP_VERSION,
            "--file-version", APP_VERSION + ".0", "--company-name", AUTHOR, "--copyright", "© 2026 " + AUTHOR]
     subprocess.run(cmd, cwd=HERE, check=True, env=ENV)

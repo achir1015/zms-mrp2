@@ -26,7 +26,7 @@ iconutil -c icns "$SET" -o build-mac/icon.icns
 echo "== flet pack"
 .venv/bin/flet pack main.py -y -n ZMSMRP2 -i build-mac/icon.icns --distpath dist-mac \
   --add-data assets:assets --add-data mrp/schema.sql:mrp --add-data mrp/demo_data.sql:mrp \
-  --hidden-import edge_tts --hidden-import pymysql \
+  --hidden-import edge_tts --hidden-import pymysql --hidden-import qrcode --hidden-import qrcode.image.pil \
   --product-name "$NAME" --product-version "$VER" --bundle-id "$BUNDLE_ID" --copyright "© 2026 吳玉柱"
 
 APP=dist-mac/ZMSMRP2.app
