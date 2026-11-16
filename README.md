@@ -3,6 +3,8 @@
 <img width="1486" height="915" alt="image" src="https://github.com/user-attachments/assets/ed90d124-06f8-4e59-8d57-7e998e197dba" />
 <img width="1285" height="337" alt="image" src="https://github.com/user-attachments/assets/ea813e8b-064f-4a51-a012-5b3fcd47d15f" />
 
+https://youtu.be/FR-yDcFmGfw
+
 製造業用的 MRP／MRP II 系統：需求預測、客戶訂單 → 主生產排程 → 物料需求規劃 → 產能需求規劃 → 採購、工單、存貨 → 成本。
 
 - 介面用 Python＋Flet，資料庫用 MariaDB（95 張表，每個欄位都有繁中備註）。
