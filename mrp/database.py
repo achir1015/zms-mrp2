@@ -18,13 +18,21 @@ UPGRADES = {
     "1.2.0": [
         "ALTER TABLE acc_voucher_h MODIFY voucher_no VARCHAR(30) NOT NULL COMMENT '傳票參考號（來源單號）'",
         "ALTER TABLE acc_voucher_h ADD COLUMN IF NOT EXISTS batch_id INT NULL COMMENT '所屬拋轉批次' AFTER voucher_no",
+        # 升級敘述一律不可重建資料表（複製或就地重建，最後都要把檔案改名；Windows 上曾改名失敗而把表弄壞）：
+        # 關閉外鍵檢查時加外鍵只改中繼資料；CHECK 只刪不重建（類別由程式控管，新資料庫仍有新的 CHECK）；
+        # 加欄位與加索引要分開下（合在一起會重建）。tests/test_upgrade.py 以 alter_algorithm=NOCOPY 把關
+        "SET SESSION foreign_key_checks = 0",
         "ALTER TABLE acc_voucher_h ADD FOREIGN KEY IF NOT EXISTS fk_acc_voucher_h_batch_id (batch_id) REFERENCES acc_gl_batch (id)",
+        "SET SESSION foreign_key_checks = 1",
         "ALTER TABLE acc_voucher_h DROP CONSTRAINT IF EXISTS ck_acc_voucher_h_1",
-        "ALTER TABLE acc_voucher_h ADD CONSTRAINT ck_acc_voucher_h_1 CHECK (source_type IN ('PUR','ISS','CMP','RPT','SHP','VAR','ADJ'))",
-        "ALTER TABLE pur_receipt_h ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_pur_receipt_h_gl (gl_batch_id)",
-        "ALTER TABLE sal_ship_h ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_sal_ship_h_gl (gl_batch_id)",
-        "ALTER TABLE inv_txn ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_inv_txn_gl (gl_batch_id)",
-        "ALTER TABLE sfc_report ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_sfc_report_gl (gl_batch_id)",
+        "ALTER TABLE pur_receipt_h ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）'",
+        "ALTER TABLE pur_receipt_h ADD INDEX IF NOT EXISTS ix_pur_receipt_h_gl (gl_batch_id)",
+        "ALTER TABLE sal_ship_h ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）'",
+        "ALTER TABLE sal_ship_h ADD INDEX IF NOT EXISTS ix_sal_ship_h_gl (gl_batch_id)",
+        "ALTER TABLE inv_txn ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）'",
+        "ALTER TABLE inv_txn ADD INDEX IF NOT EXISTS ix_inv_txn_gl (gl_batch_id)",
+        "ALTER TABLE sfc_report ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）'",
+        "ALTER TABLE sfc_report ADD INDEX IF NOT EXISTS ix_sfc_report_gl (gl_batch_id)",
         "UPDATE acc_account_map SET account_no='1212', account_name='原料' WHERE map_code='INV_RAW' AND account_no='1231'",
         "UPDATE acc_account_map SET account_no='1213', account_name='在製品' WHERE map_code='INV_WIP' AND account_no='1232'",
         "UPDATE acc_account_map SET account_no='1214', account_name='製成品' WHERE map_code='INV_FG' AND account_no='1233'",
