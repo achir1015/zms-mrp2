@@ -1,7 +1,7 @@
 """資料助秘之物料需求II生產製造系統。"""
 APP_NAME = "資料助秘之物料需求II生產製造系統"
 APP_SHORT = "物料需求 MRP II"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 APP_ID = "ZMSMRP2"                         # 資料夾、執行檔、安裝檔名稱
 GITHUB_REPO = "achir1015/zms-mrp2"
 AUTHOR = "吳玉柱"

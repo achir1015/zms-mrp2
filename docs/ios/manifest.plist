@@ -23,7 +23,7 @@
       <key>metadata</key>
       <dict>
         <key>bundle-identifier</key><string>com.achir.zmsmrp2</string>
-        <key>bundle-version</key><string>1.2.0</string>
+        <key>bundle-version</key><string>1.2.1</string>
         <key>kind</key><string>software</string>
         <key>title</key><string>資料助秘之物料需求II生產製造系統</string>
       </dict>
