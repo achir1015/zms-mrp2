@@ -423,6 +423,19 @@ class Grid(ft.Column):
 
 
 # ---------------------------------------------------------------- 畫面共用環境
+def close_top(page):
+    """關閉最上層的對話框。toast 的 SnackBar 也在同一個對話框堆疊裡，page.pop_dialog() 會先關到它，
+    讓「顯示成功訊息後關閉對話框」反而留下對話框；這裡略過 SnackBar。"""
+    stack = getattr(getattr(page, "_dialogs", None), "controls", None)
+    if stack is None:
+        return page.pop_dialog()
+    dlg = next((d for d in reversed(stack) if d.open and not isinstance(d, ft.SnackBar)), None)
+    if dlg:
+        dlg.open = False
+        dlg.update()
+    return dlg
+
+
 class Ctx:
     def __init__(self, app):
         self.app = app
@@ -453,13 +466,13 @@ class Ctx:
 
     def confirm(self, title, msg, on_yes, yes="確定", danger=True):
         def go(e):
-            self.page.pop_dialog()
+            close_top(self.page)
             on_yes()
         self.page.show_dialog(ft.AlertDialog(
             modal=True, icon=ft.Row([icon_tile(ft.Icons.HELP_OUTLINE if not danger else ft.Icons.WARNING_AMBER,
                                                "rose" if danger else "blue", 44)], alignment=ft.MainAxisAlignment.CENTER),
             title=ft.Text(title, size=18, weight=ft.FontWeight.W_700), content=ft.Text(msg, size=14),
-            actions=[btn("取消", kind="ghost", on_click=lambda e: self.page.pop_dialog()),
+            actions=[btn("取消", kind="ghost", on_click=lambda e: close_top(self.page)),
                      btn(yes, on_click=go, bgcolor=DANGER if danger else PRIMARY)]))
 
     def dialog(self, title, content, actions, icon=None, tone="blue", width=560):
@@ -475,7 +488,7 @@ class Ctx:
             inset_padding=ft.Padding.symmetric(horizontal=12, vertical=24) if MOBILE else None))
 
     def close(self):
-        self.page.pop_dialog()
+        close_top(self.page)
 
     async def save_as(self, name, ext):
         path = await ft.FilePicker().save_file(dialog_title="另存新檔", file_name=name, allowed_extensions=[ext])

@@ -394,7 +394,7 @@ class App:
         g, tone, it = found
         speaker.stop()
         try:
-            self.page.pop_dialog()
+            T.close_top(self.page)
         except Exception:
             pass
         self.current = sid
@@ -530,12 +530,12 @@ class App:
                 st.password = st.extra.get("embedded_password") or Settings.load().password
                 st.database = dbn.value.strip() or "zms_mrp2"
             st.save()
-            p.pop_dialog()
+            T.close_top(p)
             self.shutdown()
             self.splash()
 
         T.Ctx.dialog(self, "資料庫設定", ft.Column([mode, box, msg], tight=True, spacing=12),
-                     [T.btn("取消", kind="ghost", on_click=lambda e: p.pop_dialog()),
+                     [T.btn("取消", kind="ghost", on_click=lambda e: T.close_top(p)),
                       T.btn("測試連線", ft.Icons.WIFI_TETHERING, test, kind="outline"),
                       T.btn("儲存並重新連線", ft.Icons.SAVE, save)], icon=ft.Icons.STORAGE, width=560)
 

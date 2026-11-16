@@ -348,7 +348,7 @@ class GL:
                 self.db.exec("UPDATE %s SET gl_batch_id=NULL WHERE gl_batch_id=%%s" % t, (bid,))
             self.db.exec("DELETE d FROM acc_voucher_d d JOIN acc_voucher_h h ON h.id=d.voucher_id WHERE h.batch_id=%s", (bid,))
             self.db.exec("DELETE FROM acc_voucher_h WHERE batch_id=%s", (bid,))
-            self.db.exec("UPDATE acc_gl_batch SET status='X', result=CONCAT(COALESCE(result,''), ' ／已取消') WHERE id=%s", (bid,))
+            self.db.exec("UPDATE acc_gl_batch SET status='X', result=CONCAT_WS('／', NULLIF(result,''), '已取消') WHERE id=%s", (bid,))
         self.log("GLCANCEL", "acc_gl_batch", b["batch_no"], None, "ACC")
 
 
