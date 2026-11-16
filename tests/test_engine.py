@@ -16,7 +16,7 @@ def item(b, code):
 
 
 def test_seed_and_comments(biz):
-    assert biz.db.value("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zms_mrp2_test'") == 95
+    assert biz.db.value("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zms_mrp2_test'") == 96
     assert biz.db.value("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='zms_mrp2_test' "
                         "AND column_comment=''") == 0
     assert biz.db.value("SELECT COUNT(*) FROM sys_function") == 14

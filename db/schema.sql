@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 資料助秘之物料需求II生產製造系統（ZMS MRP II）— MariaDB 建表腳本
 -- 由 db/schema_spec.py 自動產生，請勿手改；修改規格後重新執行產生器
--- 資料表 95 張；字元集 utf8mb4；引擎 InnoDB
+-- 資料表 96 張；字元集 utf8mb4；引擎 InnoDB
 -- ============================================================================
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -688,6 +688,7 @@ CREATE TABLE IF NOT EXISTS `sal_ship_h` (
   `base_untaxed_amount` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '本位幣未稅金額',
   `base_tax_amount` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '本位幣稅額',
   `status` CHAR(1) NOT NULL DEFAULT 'D' COMMENT 'D 草稿、A 已過帳、X 作廢',
+  `gl_batch_id` INT COMMENT '會計拋轉批次（空白＝尚未拋轉）',
   `note` VARCHAR(500) COMMENT '備註',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立時間',
   `created_by` INT COMMENT '建立者',
@@ -696,6 +697,7 @@ CREATE TABLE IF NOT EXISTS `sal_ship_h` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_sal_ship_h_ship_no` (`ship_no`),
   KEY `ix_sal_ship_h_1` (`currency_code`),
+  KEY `ix_sal_ship_h_2` (`gl_batch_id`),
   CONSTRAINT `fk_sal_ship_h_customer_id` FOREIGN KEY (`customer_id`) REFERENCES `sal_customer` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_sal_ship_h_warehouse_id` FOREIGN KEY (`warehouse_id`) REFERENCES `bas_warehouse` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_sal_ship_h_currency_code` FOREIGN KEY (`currency_code`) REFERENCES `bas_currency` (`currency_code`) ON DELETE RESTRICT,
@@ -1358,6 +1360,7 @@ CREATE TABLE IF NOT EXISTS `pur_receipt_h` (
   `base_untaxed_amount` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '本位幣未稅金額',
   `base_tax_amount` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '本位幣稅額',
   `status` CHAR(1) NOT NULL DEFAULT 'D' COMMENT 'D 草稿、A 已入庫、X 作廢',
+  `gl_batch_id` INT COMMENT '會計拋轉批次（空白＝尚未拋轉）',
   `note` VARCHAR(500) COMMENT '備註',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立時間',
   `created_by` INT COMMENT '建立者',
@@ -1366,6 +1369,7 @@ CREATE TABLE IF NOT EXISTS `pur_receipt_h` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_pur_receipt_h_rcv_no` (`rcv_no`),
   KEY `ix_pur_receipt_h_1` (`currency_code`),
+  KEY `ix_pur_receipt_h_2` (`gl_batch_id`),
   CONSTRAINT `fk_pur_receipt_h_supplier_id` FOREIGN KEY (`supplier_id`) REFERENCES `pur_supplier` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_pur_receipt_h_warehouse_id` FOREIGN KEY (`warehouse_id`) REFERENCES `bas_warehouse` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_pur_receipt_h_currency_code` FOREIGN KEY (`currency_code`) REFERENCES `bas_currency` (`currency_code`) ON DELETE RESTRICT,
@@ -1613,9 +1617,11 @@ CREATE TABLE IF NOT EXISTS `sfc_report` (
   `good_qty` DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '良品',
   `scrap_qty` DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '不良',
   `scrap_reason` VARCHAR(100) COMMENT '不良原因',
+  `gl_batch_id` INT COMMENT '會計拋轉批次（空白＝尚未拋轉）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_sfc_report_report_no` (`report_no`),
   KEY `ix_sfc_report_1` (`start_time`),
+  KEY `ix_sfc_report_2` (`gl_batch_id`),
   CONSTRAINT `fk_sfc_report_wo_op_id` FOREIGN KEY (`wo_op_id`) REFERENCES `sfc_wo_operation` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_sfc_report_employee_id` FOREIGN KEY (`employee_id`) REFERENCES `bas_employee` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_sfc_report_machine_id` FOREIGN KEY (`machine_id`) REFERENCES `rou_machine` (`id`) ON DELETE RESTRICT,
@@ -1742,12 +1748,14 @@ CREATE TABLE IF NOT EXISTS `inv_txn` (
   `unit_cost` DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT '單位成本',
   `amount` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '金額',
   `wo_id` INT COMMENT '相關工單',
+  `gl_batch_id` INT COMMENT '會計拋轉批次（空白＝尚未拋轉）',
   `created_by` INT COMMENT '建立者',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立時間',
   PRIMARY KEY (`id`),
   KEY `ix_inv_txn_1` (`item_id`, `txn_time`),
   KEY `ix_inv_txn_2` (`doc_type`, `doc_no`),
   KEY `ix_inv_txn_3` (`item_id`, `rev_id`),
+  KEY `ix_inv_txn_4` (`gl_batch_id`),
   CONSTRAINT `fk_inv_txn_doc_type` FOREIGN KEY (`doc_type`) REFERENCES `sys_doc_type` (`doc_type`) ON DELETE RESTRICT,
   CONSTRAINT `fk_inv_txn_item_id` FOREIGN KEY (`item_id`) REFERENCES `itm_item` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_inv_txn_rev_id` FOREIGN KEY (`rev_id`) REFERENCES `itm_revision` (`id`) ON DELETE RESTRICT,
@@ -1921,7 +1929,7 @@ CREATE TABLE IF NOT EXISTS `inv_count_d` (
   CONSTRAINT `fk_inv_count_d_location_id` FOREIGN KEY (`location_id`) REFERENCES `bas_location` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='盤點單身';
 
--- ─────────────── ACC 會計與財務分析（9 張）───────────────
+-- ─────────────── ACC 會計與財務分析（10 張）───────────────
 -- 會計期間：月結與關帳（關帳後不可再異動）
 CREATE TABLE IF NOT EXISTS `acc_period` (
   `period` CHAR(6) NOT NULL COMMENT '期別 yyyymm',
@@ -2063,13 +2071,41 @@ CREATE TABLE IF NOT EXISTS `acc_variance` (
   CONSTRAINT `ck_acc_variance_1` CHECK (variance_type IN ('PPV','MUV','LEV','OHV','YLD','FXV'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='成本差異';
 
+-- 會計拋轉批次：一次拋轉產生的傳票批次（zms-gl 格式）；可匯出拋轉檔或直接傳送到會計系統
+CREATE TABLE IF NOT EXISTS `acc_gl_batch` (
+  `id` INT NOT NULL AUTO_INCREMENT COMMENT '流水號',
+  `batch_no` VARCHAR(20) NOT NULL COMMENT '批次號碼',
+  `batch_uid` VARCHAR(80) NOT NULL COMMENT '批次代碼（會計系統用來防止重複匯入）',
+  `date_from` DATE NOT NULL COMMENT '拋轉期間起',
+  `date_to` DATE NOT NULL COMMENT '拋轉期間迄',
+  `scope` VARCHAR(60) NOT NULL COMMENT '拋轉類別（逗號分隔）',
+  `voucher_count` INT NOT NULL DEFAULT 0 COMMENT '傳票張數',
+  `total` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '借方合計',
+  `payload` LONGTEXT COMMENT '拋轉內容 JSON',
+  `method` CHAR(1) COMMENT 'F 匯出檔案、A 直接傳送',
+  `status` CHAR(1) NOT NULL DEFAULT 'N' COMMENT 'N 已產生、E 已匯出、S 已傳送、X 已取消',
+  `result` VARCHAR(500) COMMENT '結果說明',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立時間',
+  `created_by` INT COMMENT '建立者',
+  `updated_at` DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改時間',
+  `updated_by` INT COMMENT '修改者',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_acc_gl_batch_batch_no` (`batch_no`),
+  UNIQUE KEY `uk_acc_gl_batch_batch_uid` (`batch_uid`),
+  CONSTRAINT `fk_acc_gl_batch_created_by` FOREIGN KEY (`created_by`) REFERENCES `sys_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_acc_gl_batch_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `sys_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `ck_acc_gl_batch_1` CHECK (status IN ('N','E','S','X')),
+  CONSTRAINT `ck_acc_gl_batch_2` CHECK (payload IS NULL OR JSON_VALID(payload))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='會計拋轉批次';
+
 -- 拋轉傳票單頭：由進貨/領料/完工/出貨/差異彙總，拋轉到「資料助秘之一般公司會計」
 CREATE TABLE IF NOT EXISTS `acc_voucher_h` (
   `id` INT NOT NULL AUTO_INCREMENT COMMENT '流水號',
-  `voucher_no` VARCHAR(20) NOT NULL COMMENT '傳票號碼',
+  `voucher_no` VARCHAR(30) NOT NULL COMMENT '傳票參考號（來源單號）',
+  `batch_id` INT COMMENT '所屬拋轉批次',
   `voucher_date` DATE NOT NULL COMMENT '傳票日期',
   `period` CHAR(6) NOT NULL COMMENT '期別',
-  `source_type` CHAR(3) NOT NULL COMMENT 'PUR 進貨、ISS 領料、CMP 完工、SHP 出貨、VAR 差異、ADJ 調整',
+  `source_type` CHAR(3) NOT NULL COMMENT 'PUR 進貨、ISS 領料、CMP 完工、RPT 報工、SHP 出貨、VAR 差異、ADJ 調整',
   `status` CHAR(1) NOT NULL DEFAULT 'N' COMMENT 'N 未拋轉、E 已匯出檔案、S 已傳送 API',
   `exported_at` DATETIME COMMENT '拋轉時間',
   `summary` VARCHAR(200) COMMENT '摘要',
@@ -2079,10 +2115,11 @@ CREATE TABLE IF NOT EXISTS `acc_voucher_h` (
   `updated_by` INT COMMENT '修改者',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_acc_voucher_h_voucher_no` (`voucher_no`),
+  CONSTRAINT `fk_acc_voucher_h_batch_id` FOREIGN KEY (`batch_id`) REFERENCES `acc_gl_batch` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_acc_voucher_h_period` FOREIGN KEY (`period`) REFERENCES `acc_period` (`period`) ON DELETE RESTRICT,
   CONSTRAINT `fk_acc_voucher_h_created_by` FOREIGN KEY (`created_by`) REFERENCES `sys_user` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_acc_voucher_h_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `sys_user` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `ck_acc_voucher_h_1` CHECK (source_type IN ('PUR','ISS','CMP','SHP','VAR','ADJ')),
+  CONSTRAINT `ck_acc_voucher_h_1` CHECK (source_type IN ('PUR','ISS','CMP','RPT','SHP','VAR','ADJ')),
   CONSTRAINT `ck_acc_voucher_h_2` CHECK (status IN ('N','E','S'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='拋轉傳票單頭';
 

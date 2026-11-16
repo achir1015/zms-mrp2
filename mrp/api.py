@@ -24,7 +24,8 @@ API_VERSION = 1
 
 # 不開放給手機的方法
 DENY = {"login", "logout", "create_first_admin", "log", "db", "refresh_user", "post_in", "post_out", "reserve",
-        "lot_id", "fifo_candidates", "next_no"}
+        "lot_id", "fifo_candidates", "next_no",
+        "export_gl_batch", "send_gl_batch", "cancel_gl_batch"}   # 要在電腦端存檔或連會計系統
 
 
 def allowed_methods(cls):

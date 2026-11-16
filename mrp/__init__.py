@@ -5,4 +5,4 @@ APP_VERSION = "1.1.1"
 APP_ID = "ZMSMRP2"                         # 資料夾、執行檔、安裝檔名稱
 GITHUB_REPO = "achir1015/zms-mrp2"
 AUTHOR = "吳玉柱"
-SCHEMA_VERSION = "1.0.0"                   # 資料庫結構版本（sys_schema_version）
+SCHEMA_VERSION = "1.2.0"                   # 資料庫結構版本（sys_schema_version）

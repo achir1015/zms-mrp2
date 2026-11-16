@@ -17,7 +17,7 @@ from . import theme as T
 IOS_INSTALL_PAGE = "https://achir1015.github.io/zms-mrp2/ios/"
 
 # 手機不提供的功能（需要直接操作電腦上的資料庫檔案或程式）
-DESKTOP_ONLY = {"backup", "update", "mobile_link", "demo"}
+DESKTOP_ONLY = {"backup", "update", "mobile_link", "demo", "gl_transfer"}
 
 
 def is_mobile(page) -> bool:

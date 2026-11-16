@@ -12,7 +12,7 @@ GROUPS = [("認識系統", ["intro", "quickstart", "flow", "home"]),
           ("產品結構與產能", ["bom", "ecn", "routings", "work_centers", "machines", "wc_rates"]),
           ("需求與規劃", ["forecast", "so", "ship", "mps", "mrp_run", "planned", "crp"]),
           ("採購、生產、存貨", ["pr", "po", "receive", "wo", "stock", "inv_ops"]),
-          ("成本與系統", ["cost", "account_map", "users", "backup", "update", "audit", "demo", "help"])]
+          ("成本與系統", ["cost", "gl_transfer", "account_map", "users", "backup", "update", "audit", "demo", "help"])]
 TITLES = {k: (t, x) for k, t, x in GUIDE}
 ORDER = [k for _, ks in GROUPS for k in ks if k in TITLES]
 FLOW = [(I.INSIGHTS, "預測／訂單", "sky"), (I.EVENT_NOTE, "MPS", "blue"), (I.ACCOUNT_TREE, "BOM 展開", "violet"),

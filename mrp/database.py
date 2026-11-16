@@ -14,7 +14,33 @@ from . import SCHEMA_VERSION
 from .settings import Settings
 
 UPGRADES = {
-    # "1.1.0": ["ALTER TABLE itm_item ADD COLUMN ... COMMENT '…'"],
+    # 會計拋轉：拋轉批次、來源單據標記；科目對應改成與「資料助秘之一般公司會計」預設科目表一致（使用者沒改過的才更正）
+    "1.2.0": [
+        "ALTER TABLE acc_voucher_h MODIFY voucher_no VARCHAR(30) NOT NULL COMMENT '傳票參考號（來源單號）'",
+        "ALTER TABLE acc_voucher_h ADD COLUMN IF NOT EXISTS batch_id INT NULL COMMENT '所屬拋轉批次' AFTER voucher_no",
+        "ALTER TABLE acc_voucher_h ADD FOREIGN KEY IF NOT EXISTS fk_acc_voucher_h_batch_id (batch_id) REFERENCES acc_gl_batch (id)",
+        "ALTER TABLE acc_voucher_h DROP CONSTRAINT IF EXISTS ck_acc_voucher_h_1",
+        "ALTER TABLE acc_voucher_h ADD CONSTRAINT ck_acc_voucher_h_1 CHECK (source_type IN ('PUR','ISS','CMP','RPT','SHP','VAR','ADJ'))",
+        "ALTER TABLE pur_receipt_h ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_pur_receipt_h_gl (gl_batch_id)",
+        "ALTER TABLE sal_ship_h ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_sal_ship_h_gl (gl_batch_id)",
+        "ALTER TABLE inv_txn ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_inv_txn_gl (gl_batch_id)",
+        "ALTER TABLE sfc_report ADD COLUMN IF NOT EXISTS gl_batch_id INT NULL COMMENT '會計拋轉批次（空白＝尚未拋轉）', ADD INDEX IF NOT EXISTS ix_sfc_report_gl (gl_batch_id)",
+        "UPDATE acc_account_map SET account_no='1212', account_name='原料' WHERE map_code='INV_RAW' AND account_no='1231'",
+        "UPDATE acc_account_map SET account_no='1213', account_name='在製品' WHERE map_code='INV_WIP' AND account_no='1232'",
+        "UPDATE acc_account_map SET account_no='1214', account_name='製成品' WHERE map_code='INV_FG' AND account_no='1233'",
+        "UPDATE acc_account_map SET account_no='1161', account_name='進項稅額' WHERE map_code='VAT_IN' AND account_no='1268'",
+        "UPDATE acc_account_map SET account_no='2131', account_name='應付帳款' WHERE map_code='AP' AND account_no='2171'",
+        "UPDATE acc_account_map SET account_no='1141', account_name='應收帳款' WHERE map_code='AR' AND account_no='1191'",
+        "UPDATE acc_account_map SET account_no='2161', account_name='銷項稅額' WHERE map_code='VAT_OUT' AND account_no='2204'",
+        "UPDATE acc_account_map SET account_no='5122', account_name='已分攤直接人工' WHERE map_code='LABOR_APPLIED' AND account_no='5121'",
+        "UPDATE acc_account_map SET account_no='5123', account_name='已分攤製造費用' WHERE map_code='OH_APPLIED' AND account_no='5131'",
+        "UPDATE acc_account_map SET account_no='5118', account_name='採購價格差異' WHERE map_code='PPV' AND account_no='5141'",
+        "UPDATE acc_account_map SET account_no='5119', account_name='材料用量差異' WHERE map_code='MUV' AND account_no='5142'",
+        "UPDATE acc_account_map SET account_no='5116', account_name='存貨報廢損失' WHERE map_code='SCRAP' AND account_no='5143'",
+        "UPDATE acc_account_map SET account_no='5115', account_name='存貨盤盈虧' WHERE map_code='INV_ADJ' AND account_no='5144'",
+        "UPDATE acc_account_map SET account_no='7221', account_name='兌換損失' WHERE map_code='FXV' AND account_no='7151'",
+        "INSERT IGNORE INTO acc_account_map (map_code, map_name, account_no, account_name) VALUES ('FX_GAIN', '兌換利益', '7131', '兌換利益')",
+    ],
 }
 
 

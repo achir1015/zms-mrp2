@@ -2,13 +2,14 @@
 import os
 
 from .core import Base, BizError
+from .gl import GL
 from .inventory import Inventory
 from .ops import Ops
 from .planning import Planning
 from .screens import Screens
 
 
-class Biz(Base, Inventory, Planning, Ops, Screens):
+class Biz(Base, Inventory, Planning, Ops, Screens, GL):
     def has_business_data(self):
         return bool(self.db.value("SELECT COUNT(*) FROM itm_item"))
 

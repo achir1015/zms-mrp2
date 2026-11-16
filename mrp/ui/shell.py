@@ -69,6 +69,7 @@ def menu():
             ("inv_ops", "期初／調整／調撥", I.TUNE, "INV", 1)]),
         ("成本會計", I.CALCULATE, "rose", [
             ("cost", "標準成本與差異", I.CALCULATE, "ACC", 1),
+            ("gl_transfer", "會計拋轉", I.SYNC_ALT, "ACC", 1),
             ("wc_rates", "工作中心費率", I.PRICE_CHANGE, "ACC", 1),
             ("account_map", "會計科目對應", I.ACCOUNT_TREE, "ACC", 1)]),
         ("基本資料", I.FOLDER_SPECIAL, "sky", [
@@ -94,7 +95,7 @@ def menu():
 
 
 def build_screen(sid, ctx, **kw):
-    from . import admin, bom, cost, dashboard, docs, helpview, items, masters, plan, shop, stock
+    from . import admin, bom, cost, dashboard, docs, glview, helpview, items, masters, plan, shop, stock
     table = {
         "home": dashboard.Dashboard, "items": items.Items, "bom": bom.BomScreen, "routings": bom.RoutingScreen,
         "so": lambda c, **k: docs.DocScreen(c, "SO", **k), "po": lambda c, **k: docs.DocScreen(c, "PO", **k),
@@ -102,7 +103,7 @@ def build_screen(sid, ctx, **kw):
         "mps": plan.MpsScreen, "mrp_run": plan.MrpScreen, "planned": lambda c, **k: plan.MrpScreen(c, tab="po", **k),
         "crp": plan.CrpScreen, "wo": shop.WorkOrders, "stock": stock.StockQuery, "inv_ops": stock.InvOps,
         "cost": cost.CostScreen, "users": admin.Users, "company": admin.Company, "backup": admin.Backup,
-        "update": admin.Update, "audit": admin.Audit, "mobile_link": admin.MobileLink, "demo": admin.Demo, "help": helpview.Help,
+        "update": admin.Update, "audit": admin.Audit, "mobile_link": admin.MobileLink, "gl_transfer": glview.GLTransfer, "demo": admin.Demo, "help": helpview.Help,
     }
     if sid in table:
         return table[sid](ctx, **kw)

@@ -1093,15 +1093,30 @@ T("acc_variance", "成本差異", "採購價差、用料差異、人工效率差
     NOTE(),
 ], checks=["variance_type IN ('PPV','MUV','LEV','OHV','YLD','FXV')"], audit=False)
 
+T("acc_gl_batch", "會計拋轉批次", "一次拋轉產生的傳票批次（zms-gl 格式）；可匯出拋轉檔或直接傳送到會計系統", [
+    ID(), C("batch_no", "VARCHAR(20)", "NU", "批次號碼"),
+    C("batch_uid", "VARCHAR(80)", "NU", "批次代碼（會計系統用來防止重複匯入）"),
+    C("date_from", "DATE", "N", "拋轉期間起"),
+    C("date_to", "DATE", "N", "拋轉期間迄"),
+    C("scope", "VARCHAR(60)", "N", "拋轉類別（逗號分隔）"),
+    C("voucher_count", "INT", "N", "傳票張數", default="0"),
+    C("total", AMT, "N", "借方合計", default="0"),
+    C("payload", "LONGTEXT", "", "拋轉內容 JSON"),
+    C("method", "CHAR(1)", "", "F 匯出檔案、A 直接傳送"),
+    C("status", "CHAR(1)", "N", "N 已產生、E 已匯出、S 已傳送、X 已取消", default="'N'"),
+    C("result", "VARCHAR(500)", "", "結果說明"),
+], checks=["status IN ('N','E','S','X')", "payload IS NULL OR JSON_VALID(payload)"])
+
 T("acc_voucher_h", "拋轉傳票單頭", "由進貨/領料/完工/出貨/差異彙總，拋轉到「資料助秘之一般公司會計」", [
-    ID(), C("voucher_no", "VARCHAR(20)", "NU", "傳票號碼"),
+    ID(), C("voucher_no", "VARCHAR(30)", "NU", "傳票參考號（來源單號）"),
+    C("batch_id", "INT", "", "所屬拋轉批次", ref="acc_gl_batch"),
     C("voucher_date", "DATE", "N", "傳票日期"),
     C("period", "CHAR(6)", "N", "期別", ref="acc_period"),
-    C("source_type", "CHAR(3)", "N", "PUR 進貨、ISS 領料、CMP 完工、SHP 出貨、VAR 差異、ADJ 調整"),
+    C("source_type", "CHAR(3)", "N", "PUR 進貨、ISS 領料、CMP 完工、RPT 報工、SHP 出貨、VAR 差異、ADJ 調整"),
     C("status", "CHAR(1)", "N", "N 未拋轉、E 已匯出檔案、S 已傳送 API", default="'N'"),
     C("exported_at", "DATETIME", "", "拋轉時間"),
     C("summary", "VARCHAR(200)", "", "摘要"),
-], checks=["source_type IN ('PUR','ISS','CMP','SHP','VAR','ADJ')", "status IN ('N','E','S')"])
+], checks=["source_type IN ('PUR','ISS','CMP','RPT','SHP','VAR','ADJ')", "status IN ('N','E','S')"])
 
 T("acc_voucher_d", "拋轉傳票單身", "借貸分錄", [
     BID(), C("voucher_id", "INT", "N", "傳票單頭", ref="acc_voucher_h"),
@@ -1206,6 +1221,13 @@ for _t in ("pur_order_d", "pur_receipt_d", "sal_order_d", "sal_ship_d"):
     _tb = next(x for x in TABLES if x["name"] == _t)
     _names = [c["name"] for c in _tb["cols"]]
     _tb["cols"].insert(_names.index("amount") + 1, C("base_amount", AMT, "N", "本位幣金額", default="0"))
+
+# ════════════════════════ 會計拋轉標記（已拋轉的來源單據鎖定，取消拋轉才解除）════════════════════════
+for _t, _after in (("pur_receipt_h", "status"), ("sal_ship_h", "status"), ("inv_txn", "wo_id"), ("sfc_report", "scrap_reason")):
+    _tb = next(x for x in TABLES if x["name"] == _t)
+    _names = [c["name"] for c in _tb["cols"]]
+    _tb["cols"].insert(_names.index(_after) + 1, C("gl_batch_id", "INT", "", "會計拋轉批次（空白＝尚未拋轉）"))
+    _tb["index"].append(("gl_batch_id",))
 
 # acc_item_cost 唯一鍵需含版本
 next(t for t in TABLES if t["name"] == "acc_item_cost")["uniq"] = [("item_id", "cost_type", "period", "rev_key")]
