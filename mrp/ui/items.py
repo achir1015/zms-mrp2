@@ -55,7 +55,7 @@ class Items(ft.Row):
                           self.grid], expand=True, spacing=12)
         right = T.card(ft.Column([ft.Row([T.icon_tile(I.CATEGORY, "teal", 40), self.title], spacing=12), self.tab,
                                   self.body], spacing=12, expand=True), width=520, padding=18)
-        super().__init__([left, right], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+        super().__init__([left, right], expand=True, spacing=14, data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.item_id = item_id
         self.reload()
         self.render(refresh=False)

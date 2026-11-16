@@ -206,8 +206,8 @@ def login(app, msg=""):
         route, _, q = (p.route or "").strip("/").partition("?")
         T.MZ_OFF = set(urllib.parse.parse_qs(q).get("off", [""])[0].split(",")) - {""}
         app.main()
-        if route and app.find(route):
-            app.go(route)
+        if route:
+            app.go_route(route)
         return
     p.controls.clear()
     p.add(ft.SafeArea(ft.Container(ft.Column([

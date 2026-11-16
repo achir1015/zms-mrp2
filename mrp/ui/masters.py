@@ -138,7 +138,7 @@ class MasterList(ft.Row):
         left = ft.Column([T.page_header(self.m["icon"], self.m["title"], self.m.get("sub", ""), self.m["tone"]),
                           ft.Row(tools, wrap=True), self.grid], expand=True, spacing=12)
         super().__init__([left, T.card(self.form_box, width=440, padding=18)], expand=True, spacing=14,
-                         vertical_alignment=ft.CrossAxisAlignment.START)
+                         data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.reload()
         self.edit(None, refresh=False)
 

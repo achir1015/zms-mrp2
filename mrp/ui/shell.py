@@ -24,6 +24,17 @@ if not log.handlers:
     log.setLevel(logging.INFO)
 
 
+APPS = []        # 啟動了內建資料庫的視窗（程式被結束時要逐一停止資料庫）
+
+
+def shutdown_all(*_):
+    for a in list(APPS):
+        try:
+            a.shutdown()
+        except Exception:
+            pass
+
+
 def menu():
     """(群組, 圖示, 色調, [(畫面代號, 名稱, 圖示, 權限, 等級)])"""
     I = ft.Icons
@@ -169,8 +180,10 @@ class App:
             if self.st.mode == "embedded":
                 self.server = LocalDatabaseServer(self.st)
                 self.server.start()
+                # macOS 按 ⌘Q 或程式被結束時不一定會觸發視窗關閉事件 → 程式結束時一律停止資料庫
                 import atexit
                 atexit.register(self.shutdown)
+                APPS.append(self)          # main.py 的 SIGTERM 處理會呼叫 shutdown
             self.status.value = "正在檢查資料庫結構…"
             self.page.update()
             self.db = DB(self.st)
@@ -228,13 +241,7 @@ class App:
             u, _, w = dev.partition(":")
             self.books.login(u, w)
             self.main()
-            route = (p.route or "").strip("/") or os.environ.get("MRP_DEV_ROUTE", "")
-            sid, _, arg = route.partition(":")          # 例：wo:1、bom:4、mrp_run:1
-            argname = {"bom": "item_id", "routings": "item_id", "items": "item_id", "stock": "item_id", "wo": "wo_id",
-                       "so": "doc_id", "po": "doc_id", "pr": "doc_id", "forecast": "doc_id", "mps": "mps_id",
-                       "mrp_run": "run_id", "planned": "run_id", "crp": "run_id"}.get(sid)
-            if sid and self.find(sid):
-                self.go(sid, **({argname: int(arg)} if arg and argname else {}))
+            self.go_route((p.route or "").strip("/") or os.environ.get("MRP_DEV_ROUTE", ""))
             return
         comp = self.books.company().get("company_name") or ""
         features = [(ft.Icons.SCHEMA, "violet", "MRP 物料需求規劃", "BOM 展開、淨需求、批量、前置時間位移、例外訊息"),
@@ -409,6 +416,15 @@ class App:
             log.exception("screen %s", sid)
             self.body.content = T.empty_state(ft.Icons.ERROR_OUTLINE, "畫面載入失敗", str(e))
         self.page.update()
+
+    def go_route(self, route):
+        """開發測試：網址指定畫面與參數，例：wo:1、bom:4、mrp_run:1。"""
+        sid, _, arg = (route or "").split("?")[0].partition(":")
+        argname = {"bom": "item_id", "routings": "item_id", "items": "item_id", "stock": "item_id", "wo": "wo_id",
+                   "so": "doc_id", "po": "doc_id", "pr": "doc_id", "forecast": "doc_id", "mps": "mps_id",
+                   "mrp_run": "run_id", "planned": "run_id", "crp": "run_id"}.get(sid)
+        if sid and self.find(sid):
+            self.go(sid, **({argname: int(arg)} if arg and argname else {}))
 
     def speak_page(self):
         if speaker.playing():

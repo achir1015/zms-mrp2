@@ -67,5 +67,5 @@ class Dashboard(ft.Column):
             ft.Row([ft.Column([ft.Text("您好，%s" % b.user["user_name"], size=24, weight=ft.FontWeight.W_800),
                                T.muted("%s　資料助秘之物料需求II生產製造系統 v%s" % (comp, APP_VERSION))], spacing=2,
                               expand=True)]),
-            kp, flow_card, ft.Row([exc, cap], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)],
+            kp, flow_card, ft.Row([exc, cap], spacing=14, data="split", vertical_alignment=ft.CrossAxisAlignment.START)],
             spacing=16, expand=True, scroll=ft.ScrollMode.AUTO)

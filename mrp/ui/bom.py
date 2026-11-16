@@ -34,7 +34,7 @@ class _Editor(ft.Row):
         title, sub, icon, tone = self.meta()
         left = ft.Column([T.page_header(icon, title, sub, tone), self.search, self.grid], width=440, spacing=12)
         super().__init__([left, T.card(self.panel, expand=True, padding=18)], expand=True, spacing=14,
-                         vertical_alignment=ft.CrossAxisAlignment.START)
+                         data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.item_id = item_id
         self.reload()
         self.render(refresh=False)

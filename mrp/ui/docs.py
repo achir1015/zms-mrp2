@@ -59,7 +59,7 @@ class DocScreen(ft.Row):
                           T.btn("新增" + self.d["title"], I.ADD, lambda e: self.open(None)) if self.editable else
                           ft.Container()], width=430, spacing=12)
         super().__init__([left, T.card(self.panel, expand=True, padding=18)], expand=True, spacing=14,
-                         vertical_alignment=ft.CrossAxisAlignment.START)
+                         data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.doc_id = doc_id
         self.reload(refresh=False)
         self.open(doc_id, refresh=False)

@@ -106,6 +106,8 @@ class Form(ft.Column):
 
     def __init__(self, look, fields, data=None, disabled=False, per_row=2, on_change=None):
         self.inputs = {}
+        if T.MOBILE:                    # 手機：每列最多兩個欄位
+            per_row = min(per_row, 2)
         rows, cur = [], []
         for key, title, typ, width in fields:
             c = make_input(look, key, title, typ, None, (data or {}).get(key), disabled,
@@ -151,7 +153,7 @@ class LinesEditor(ft.Column):
         total = 26 + sum(c[3] for c in cols) + 8 * (len(cols) + 1) + 60
         inner = ft.Column([ft.Container(head, bgcolor="#EEF3FA", border_radius=8,
                                         padding=ft.Padding.symmetric(horizontal=8, vertical=6)), self.box],
-                          spacing=6, width=total, expand=height is None)
+                          spacing=6, width=total, expand=height is None, data=T.READY)   # 手機：保持寬度、橫向捲動
         super().__init__([ft.Row([inner], scroll=ft.ScrollMode.ALWAYS, expand=height is None,
                                  vertical_alignment=ft.CrossAxisAlignment.START), self.add_btn],
                          spacing=6, expand=height is None)

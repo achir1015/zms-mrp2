@@ -37,7 +37,7 @@ class Help(ft.Row):
                                           vertical_alignment=ft.CrossAxisAlignment.CENTER)], spacing=8), padding=14)
         super().__init__([T.card(self.toc, width=290, padding=12),
                           ft.Column([banner, T.card(self.body, expand=True, padding=26)], expand=True, spacing=14)],
-                         expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+                         expand=True, spacing=14, data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.show(key if key in TITLES else "intro", refresh=False)
 
     def show(self, key, refresh=True):

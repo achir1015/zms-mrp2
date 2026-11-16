@@ -24,6 +24,13 @@ if __name__ == "__main__":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ZMS.MRP2")
         except Exception:
             pass
+    import signal
+
+    from mrp.ui.shell import shutdown_all
+    try:   # macOS ⌘Q、登出或系統結束程式（SIGTERM）時也要停止內建資料庫
+        signal.signal(signal.SIGTERM, lambda *a: (shutdown_all(), os._exit(0)))
+    except Exception:
+        pass
     assets = os.path.join(resource_dir(), "assets")
     port = os.environ.get("MRP_WEB_PORT")
     if port:

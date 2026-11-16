@@ -28,7 +28,7 @@ class StockQuery(ft.Row):
         left = ft.Column([T.page_header(I.WAREHOUSE, "庫存查詢", "紅字＝低於安全存量；MRP 可用不含待驗倉、報廢倉與淘汰版本", "violet"),
                           ft.Row([self.kw, self.wh, self.short], wrap=True), self.grid], expand=True, spacing=12)
         right = T.card(ft.Column([self.title, self.tab, self.body], spacing=12, expand=True), width=600, padding=18)
-        super().__init__([left, right], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+        super().__init__([left, right], expand=True, spacing=14, data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.item_id = item_id
         self.reload(refresh=False)
         self.render(refresh=False)

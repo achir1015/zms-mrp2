@@ -24,7 +24,7 @@ class WorkOrders(ft.Row):
         left = ft.Column([T.page_header(I.FACTORY, "工單", "發放 → 領料 → 報工 → 完工入庫", "teal", acts), self.flt,
                           self.grid], width=540, spacing=12)
         super().__init__([left, T.card(self.panel, expand=True, padding=18)], expand=True, spacing=14,
-                         vertical_alignment=ft.CrossAxisAlignment.START)
+                         data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.reload(refresh=False)
         self.open(wo_id, refresh=False)
 

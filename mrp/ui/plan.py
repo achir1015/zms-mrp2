@@ -24,7 +24,7 @@ class MpsScreen(ft.Row):
         left = ft.Column([T.page_header(I.EVENT_NOTE, "主生產排程 MPS", "由未出貨訂單與預測產生；MPS 量＝要滿足的需求",
                                         "blue", acts), self.grid], width=430, spacing=12)
         super().__init__([left, T.card(self.panel, expand=True, padding=18)], expand=True, spacing=14,
-                         vertical_alignment=ft.CrossAxisAlignment.START)
+                         data="split", vertical_alignment=ft.CrossAxisAlignment.START)
         self.reload(refresh=False)
         self.open(mps_id or (self.rows[0]["id"] if self.rows else None), refresh=False)
 
