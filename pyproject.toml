@@ -1,6 +1,6 @@
 [project]
 name = "zms-mrp2"
-version = "1.2.1"
+version = "1.2.2"
 description = "資料助秘之物料需求II生產製造系統"
 authors = [{ name = "吳玉柱" }]
 requires-python = ">=3.10"

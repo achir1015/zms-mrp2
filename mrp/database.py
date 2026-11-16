@@ -3,7 +3,10 @@
 * 建表：mrp/schema.sql（由 db/schema_spec.py 產生）
 * 升級：UPGRADES 依版本號列出 SQL；已記錄在 sys_schema_version 的版本不會重跑（系統更新後自動套用）
 """
+import datetime
+import logging
 import os
+import shutil
 import threading
 from contextlib import contextmanager
 
@@ -12,6 +15,13 @@ import pymysql.cursors
 
 from . import SCHEMA_VERSION
 from .settings import Settings
+
+log = logging.getLogger(__name__)
+
+# 1.2.0 升級曾在 Windows 上改名失敗，把傳票表弄成半壞（.frm 或 .ibd 只剩一個）。這兩個表在 1.2.0 以前
+# 不會寫入資料；啟動時若讀不到，就把殘留檔備份到 orphan-backup、清掉後由 schema.sql 重建（repair_broken_tables）
+REPAIRABLE = ("acc_voucher_h", "acc_voucher_d")
+PROBE = "CREATE TABLE `%s` (repair_probe INT) ENGINE=InnoDB"
 
 UPGRADES = {
     # 會計拋轉：拋轉批次、來源單據標記；科目對應改成與「資料助秘之一般公司會計」預設科目表一致（使用者沒改過的才更正）
@@ -141,6 +151,62 @@ class DB:
         for stmt in split_sql(text):
             self.exec(stmt)
 
+    def _errno(self, sql):
+        try:
+            self.exec(sql)
+            return None
+        except pymysql.err.MySQLError as e:
+            return e.args[0]
+
+    def _table_files(self, t):
+        """內建資料庫才看得到檔案；連外部 MariaDB 時回傳 None。"""
+        if self.st.mode != "embedded" or not self.st.datadir:
+            return None
+        d = os.path.join(self.st.datadir, self.st.database)
+        return [os.path.join(d, t + ext) for ext in (".frm", ".ibd") if os.path.isfile(os.path.join(d, t + ext))]
+
+    def _backup(self, t, move=False):
+        files = self._table_files(t)
+        if not files:
+            return
+        dest = os.path.join(os.path.dirname(self.st.datadir), "orphan-backup")
+        os.makedirs(dest, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        for f in files:
+            to = os.path.join(dest, "%s-%s-%s" % (self.st.database, stamp, os.path.basename(f)))
+            try:
+                (shutil.move if move else shutil.copy2)(f, to)
+                log.warning("repair: %s %s -> %s", "moved" if move else "copied", f, to)
+            except OSError as e:
+                if move:
+                    raise RuntimeError("資料表 %s 的殘留檔案無法搬走（%s）。請關閉所有本系統視窗後再開一次。" % (t, e))
+                log.warning("repair: backup of %s failed: %s", f, e)
+
+    def repair_broken_tables(self):
+        """修復半壞的傳票表（見 REPAIRABLE）。回傳修好的表名。"""
+        fixed = []
+        for t in REPAIRABLE:
+            err = self._errno("SELECT 1 FROM `%s` LIMIT 0" % t)
+            if err not in (1146, 1932):              # 正常（或其他錯誤，交給後面的流程回報）
+                continue
+            self.exec("SET SESSION foreign_key_checks = 0")
+            try:
+                if err == 1146 and self._errno(PROBE % t) is None:
+                    self.exec("DROP TABLE `%s`" % t)  # 單純沒有這個表：schema.sql 會建立
+                    continue
+                self._backup(t)                       # 1932：只剩 .frm；1050：只剩 .ibd 但字典還在 → DROP 清掉
+                self.exec("DROP TABLE IF EXISTS `%s`" % t)
+                if self._errno(PROBE % t) is not None:  # 字典沒有、檔案還在（errno 184）→ 搬走孤兒 .ibd
+                    self._backup(t, move=True)
+                    if self._errno(PROBE % t) is not None:
+                        raise RuntimeError("資料表 %s 損壞，無法自動修復。請聯絡系統管理員。" % t)
+                self.exec("DROP TABLE `%s`" % t)      # 建空表再刪：一併清掉殘留的外鍵紀錄
+                fixed.append(t)
+                log.warning("repair: table %s rebuilt (was errno %s)", t, err)
+            finally:
+                self.exec("SET SESSION foreign_key_checks = 1")
+        return fixed
+
     def prepare(self):
         """建立資料庫與資料表；第一次使用時寫入預設資料；依版本套用升級。回傳 True＝全新資料庫。"""
         c = self.connect(use_db=False)
@@ -152,6 +218,8 @@ class DB:
             c.close()
         fresh = not self.value("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s "
                                "AND table_name='sys_function'", (self.st.database,))
+        if not fresh:
+            self.repair_broken_tables()
         here = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(here, "schema.sql"), encoding="utf-8") as f:
             self.run_script(f.read())

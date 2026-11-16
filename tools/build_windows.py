@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
@@ -47,8 +48,15 @@ def installer():
     iscc = next((p for p in ISCC if os.path.isfile(p)), None)
     if not iscc:
         raise SystemExit("找不到 Inno Setup 6（ISCC.exe）")
-    subprocess.run([iscc, "/DAppVer=" + APP_VERSION, os.path.join(HERE, "packaging", "installer.iss")], check=True)
-    out = os.path.join(HERE, "dist-installer", "%s-Setup-%s.exe" % (APP_ID, APP_VERSION))
+    # 先編譯到暫存資料夾再搬回 dist-installer：直接寫 dist-installer 時常被防毒鎖檔（EndUpdateResource failed 110）
+    tmp = tempfile.mkdtemp(prefix="zmsmrp2-iss-")
+    subprocess.run([iscc, "/DAppVer=" + APP_VERSION, "/O" + tmp, os.path.join(HERE, "packaging", "installer.iss")],
+                   check=True)
+    name = "%s-Setup-%s.exe" % (APP_ID, APP_VERSION)
+    out = os.path.join(HERE, "dist-installer", name)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    shutil.move(os.path.join(tmp, name), out)
+    shutil.rmtree(tmp, ignore_errors=True)
     sha = hashlib.sha256(open(out, "rb").read()).hexdigest()
     print("完成：%s（%.1f MB）\nSHA256 %s" % (out, os.path.getsize(out) / 1e6, sha))
 
