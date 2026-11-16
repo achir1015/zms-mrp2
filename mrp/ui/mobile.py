@@ -106,11 +106,15 @@ def start(app):
 
 def connect_screen(app, msg="", url=""):
     p = app.page
-    url_f = T.field("MRP II 電腦的連線網址", url or app.st.extra.get("server_url", ""), hint_text="例：192.168.6.172:8795",
+    url_f = T.field("MRP II 電腦的連線網址", url or app.st.extra.get("server_url", ""), hint_text="例：192.168.1.10:8795（看電腦上的手機連線頁）",
                     prefix_icon=ft.Icons.LINK, keyboard_type=ft.KeyboardType.URL)
     info = ft.Text(msg, color=T.DANGER if msg else T.MUTED, size=13)
 
     def go(e=None):
+        if not (url_f.value or "").strip():
+            info.value, info.color = "請輸入連線網址（灰色字只是範例）", T.DANGER
+            p.update()
+            return
         info.value, info.color = "連線中…", T.MUTED
         p.update()
         connect(app, url_f.value)

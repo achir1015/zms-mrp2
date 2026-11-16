@@ -57,6 +57,8 @@ class Client:
             raise
 
     def _post_once(self, path, body, timeout=25):
+        if not self.url:
+            raise ConnectionLost("請輸入連線網址")
         req = urllib.request.Request(self.url + path, data=wire.dumps(body), method="POST",
                                      headers={"Content-Type": "application/json", "User-Agent": APP_ID,
                                               "Authorization": "Bearer " + self.token})
@@ -76,8 +78,10 @@ class Client:
                                  getattr(e, "reason", e))
 
     def ping(self, timeout=6):
-        req = urllib.request.Request(self.url + "/api/ping", headers={"User-Agent": APP_ID})
+        if not self.url:
+            raise ConnectionLost("請輸入連線網址")
         try:
+            req = urllib.request.Request(self.url + "/api/ping", headers={"User-Agent": APP_ID})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return wire.loads(r.read())
         except Exception as e:

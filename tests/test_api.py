@@ -51,3 +51,11 @@ def test_remote_roundtrip(biz):
             rv.v("items_list")                             # 停用立即生效
     finally:
         api.stop()
+
+
+def test_empty_url_is_friendly():
+    from mrp.remote import Client, ConnectionLost
+    with pytest.raises(ConnectionLost):
+        Client("").ping()
+    with pytest.raises(ConnectionLost):
+        Client("   ").ping()
